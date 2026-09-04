@@ -44,8 +44,9 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
 
   // ===== 顶栏 =====
   const sel = new Date(selectedDate + "T00:00:00");
+  const dayCount = data.tasks.filter((t) => t.date === selectedDate && t.kind !== "goal").length;
   const progress = dayProgress(data, selectedDate);
-  const ring = buildRing(progress);
+  const ring = buildRing(progress, dayCount > 0 && progress >= 1);
 
   const topbar = el(
     "div",
@@ -156,7 +157,7 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
     { class: "tasks-col" },
     el("div", { class: "section-head" },
       el("h2", {}, "日程与待办"),
-      el("span", { class: "count-badge" }, String(openCount)),
+      openCount > 0 ? el("span", { class: "count-badge" }, String(openCount)) : null,
       el("div", { class: "spacer" }),
       selectedDate !== today
         ? el("button", { class: "mini-btn", onclick: () => opts.onSelectDate(today) }, "← 回到今天")
@@ -194,10 +195,10 @@ function dayProgress(data: Data, date: string): number {
   return ts.filter((t) => t.done).length / ts.length;
 }
 
-function buildRing(p: number): HTMLElement {
+function buildRing(p: number, allDone: boolean): HTMLElement {
   const r = 21;
   const c = 2 * Math.PI * r;
-  const wrap = el("div", { class: "progress-ring", title: "完成率" });
+  const wrap = el("div", { class: "progress-ring", title: allDone ? "全部完成 🎉" : "完成率" });
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("width", "52");
   svg.setAttribute("height", "52");
@@ -211,11 +212,15 @@ function buildRing(p: number): HTMLElement {
     circle.setAttribute("stroke-width", "4");
     circle.setAttribute("class", cls);
   }
+  if (allDone) {
+    fg.classList.add("done-all");
+  }
   fg.setAttribute("stroke-dasharray", String(c));
   fg.setAttribute("stroke-dashoffset", String(c * (1 - p)));
   fg.setAttribute("stroke-linecap", "round");
   svg.append(bg, fg);
-  wrap.append(svg, el("div", { class: "ring-label" }, `${Math.round(p * 100)}%`));
+  const label = el("div", { class: `ring-label${allDone ? " done-all" : ""}` }, allDone ? "✓" : `${Math.round(p * 100)}%`);
+  wrap.append(svg, label);
   return wrap;
 }
 

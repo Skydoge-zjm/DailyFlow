@@ -440,3 +440,12 @@ body[data-view="widget"] { overflow: hidden; background: transparent; }
 .overdue-label::after { background: linear-gradient(90deg, rgba(255,107,107,0.35), transparent) !important; }
 .overdue-group .task-item { background: color-mix(in srgb, var(--red) 6%, var(--bg)); }
 .overdue-group .task-item:hover { background: var(--card-hover); }
+
+/* ============ 美学细节 ============ */
+/* 完成 100% 时进度环变绿（庆祝感） */
+.ring-fg.done-all { stroke: var(--green); }
+.ring-label.done-all { color: var(--green); }
+
+/* 任务 item 悬停时轻微上浮（class 系列通用，无边框主题靠 shadow） */
+.task-item { will-change: transform; }
+.task-item:hover { transform: translateY(-1px); }
