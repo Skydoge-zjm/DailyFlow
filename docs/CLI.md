@@ -68,6 +68,18 @@ dailyflow widget show|hide   # 显示/隐藏桌面右上角的今日待办悬浮
 dailyflow widget pin on|off  # 悬浮窗置顶开关（默认置顶，类似输入法悬浮窗）
 ```
 
+### 主题与外观
+
+```bash
+dailyflow theme <preset>                                # 切换主题预设
+dailyflow theme <preset> --light                        # 切换预设并启用浅色
+dailyflow theme <preset> --overrides '{"--accent":"#ff5722"}'   # 切换 + 覆盖 CSS 变量
+```
+
+- 可选 preset：`classic-dark` / `classic-light` / `refined-minimal`（精致留白）/ `glassmorphism`（玻璃拟态）/ `warm-journal`（暖色手账）
+- overrides 为 CSS 变量 → 值 的 JSON，如 `{"--accent":"#ff5722","--radius":"18px"}`；传空串 `{}` 清空自定义
+- GUI 的 🎨 面板可实时预览逐变量取色，导出/导入主题 JSON 与此处的 overrides 格式一致
+
 ## 2. 参数格式
 
 ### 日期 `D`（宽松）
