@@ -155,6 +155,7 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
   const tasksCol = el(
     "div",
     { class: "tasks-col" },
+    statCards(data, today),
     el("div", { class: "section-head" },
       el("h2", {}, "日程与待办"),
       openCount > 0 ? el("span", { class: "count-badge" }, String(openCount)) : null,
@@ -187,6 +188,28 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
   );
 
   root.append(topbar, el("div", { class: "layout" }, tasksCol, sideCol), statusbar);
+}
+
+/** 概览卡：今天 / 逾期 / 长期 三张数字卡 */
+function statCards(data: Data, today: string): HTMLElement {
+  const todayAll = data.tasks.filter((t) => t.date === today && t.kind !== "goal");
+  const todayOpen = todayAll.filter((t) => !t.done).length;
+  const overdueN = data.tasks.filter((t) => !t.done && t.kind !== "goal" && t.date !== "" && t.date < today).length;
+  const goalsN = data.tasks.filter((t) => t.kind === "goal" && !t.done).length;
+  const deadlinesN = data.tasks.filter((t) => t.kind === "deadline" && !t.done && t.date !== "" && t.date >= today).length;
+  const card = (label: string, value: string, cls: string) =>
+    el("div", { class: `stat-card ${cls}` },
+      el("div", { class: "stat-value" }, value),
+      el("div", { class: "stat-label" }, label),
+    );
+  return el(
+    "div",
+    { class: "stat-cards" },
+    card("今日待办", String(todayOpen), todayOpen > 0 ? "hot" : "calm"),
+    overdueN > 0 ? card("已逾期", String(overdueN), "danger") : null,
+    deadlinesN > 0 ? card("临近截止", String(deadlinesN), "warn") : null,
+    card("长期目标", String(goalsN), "goal"),
+  );
 }
 
 function dayProgress(data: Data, date: string): number {
@@ -474,7 +497,23 @@ function quickAdd(opts: RenderOpts, selectedDate: string): HTMLElement {
 
 function notesPanel(data: Data, opts: RenderOpts): HTMLElement {
   const list = el("div", { style: "display:flex;flex-direction:column;gap:6px" });
+  const colorDot: Record<string, string> = {
+    yellow: "#fff3bf", green: "#d3f9d8", blue: "#d0ebff",
+    pink: "#ffdeeb", purple: "#e5dbff", dark: "#25272e",
+  };
   for (const n of data.notes) {
+    const toggleBtn = el("button", {
+      class: "task-del",
+      title: n.visible ? "隐藏便签窗口" : "显示便签窗口",
+      onclick: (e: unknown) => {
+        (e as Event).stopPropagation();
+        void (async () => {
+          await opts.onCall(["note", n.visible ? "hide" : "show", n.id]);
+          if (n.visible) await invokeClose(n.id);
+          window.__dailyflow.rerender();
+        })();
+      },
+    }, n.visible ? "◉" : "○");
     list.append(
       el("div", {
         class: "task-item",
@@ -482,10 +521,15 @@ function notesPanel(data: Data, opts: RenderOpts): HTMLElement {
         onclick: () => opts.onOpenNote(n),
         title: "点击打开便签窗口",
       },
+        el("span", {
+          class: "note-dot",
+          style: `background:${colorDot[n.color] || "#fff3bf"}`,
+        }),
         el("div", { class: "task-body" },
           el("div", { class: "task-title", style: "font-size:13px" }, n.title || n.body.split("\n")[0] || "（空）"),
           el("div", { class: "task-meta" }, n.visible ? "已显示" : "已隐藏", ` · ${n.color}`),
         ),
+        toggleBtn,
         el("button", {
           class: "task-del",
           title: "删除便签",

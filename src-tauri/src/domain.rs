@@ -58,26 +58,31 @@ impl Ctx {
         };
         let start_s = parse_time(start)?;
         let end_s = parse_time(end)?;
-        let mut d = self.load();
-        let id = Data::gen_id("t");
-        let task = Task {
-            id: id.clone(),
-            title: title.trim().to_string(),
-            notes: notes.trim().to_string(),
-            date: date_s.clone(),
-            start: if start_s.is_empty() { None } else { Some(start_s) },
-            end: if end_s.is_empty() { None } else { Some(end_s) },
-            done: false,
-            priority: parse_priority(priority)?,
-            kind: kind_v,
-            tags: parse_tags(tags),
-            created_at: now_iso(),
-            completed_at: None,
-        };
-        d.tasks.push(task);
-        self.save(&d)?;
-        let t = d.tasks.last().unwrap().clone();
-        ok(json!({ "id": id, "task": t }))
+        let priority_v = parse_priority(priority)?;
+        let tags_v = parse_tags(tags);
+        let notes_s = notes.trim().to_string();
+        let title_s = title.trim().to_string();
+        self.store.with_lock(2000, move |d| {
+            let id = Data::gen_id("t");
+            let task = Task {
+                id: id.clone(),
+                title: title_s,
+                notes: notes_s,
+                date: date_s.clone(),
+                start: if start_s.is_empty() { None } else { Some(start_s) },
+                end: if end_s.is_empty() { None } else { Some(end_s) },
+                done: false,
+                priority: priority_v,
+                kind: kind_v,
+                tags: tags_v,
+                created_at: now_iso(),
+                completed_at: None,
+            };
+            d.tasks.push(task);
+            let t = d.tasks.last().unwrap().clone();
+            Ok((id, t))
+        })
+        .map(|(id, t)| ok(json!({ "id": id, "task": t })))?
     }
 
     pub fn task_list(&self, scope: &str, tag: &str) -> CmdResult {
@@ -259,28 +264,31 @@ impl Ctx {
             return err("内容不能为空".into());
         }
         let color_s = normalize_color(color)?;
-        let mut d = self.load();
-        let idx = d.notes.len();
-        let id = Data::gen_id("n");
-        let (x, y) = crate::model::default_note_position(idx);
-        let note = Note {
-            id: id.clone(),
-            title: title.trim().to_string(),
-            body: body.to_string(),
-            color: color_s,
-            x,
-            y,
-            w: 260.0,
-            h: 220.0,
-            pinned: false,
-            visible: true,
-            created_at: now_iso(),
-            updated_at: now_iso(),
-        };
-        d.notes.push(note);
-        self.save(&d)?;
-        let n = d.notes.last().unwrap().clone();
-        ok(json!({ "id": id, "note": n }))
+        let body = body.to_string();
+        let title = title.to_string();
+        self.store.with_lock(2000, move |d| {
+            let idx = d.notes.len();
+            let id = Data::gen_id("n");
+            let (x, y) = crate::model::default_note_position(idx);
+            let note = Note {
+                id: id.clone(),
+                title: title.trim().to_string(),
+                body,
+                color: color_s,
+                x,
+                y,
+                w: 260.0,
+                h: 220.0,
+                pinned: false,
+                visible: true,
+                created_at: now_iso(),
+                updated_at: now_iso(),
+            };
+            d.notes.push(note);
+            let n = d.notes.last().unwrap().clone();
+            Ok((id, n))
+        })
+        .map(|(id, n)| ok(json!({ "id": id, "note": n })))?
     }
 
     pub fn note_list(&self) -> CmdResult {

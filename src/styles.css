@@ -468,3 +468,33 @@ body[data-view="widget"] { overflow: hidden; background: transparent; }
   transition: all 0.13s;
 }
 .week-nav:hover { background: var(--card-hover); color: var(--accent); }
+
+/* ============ 概览统计卡 ============ */
+.stat-cards {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(86px, 1fr));
+  gap: 9px; margin-bottom: 16px;
+}
+.stat-card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 12px; padding: 10px 12px 9px;
+  transition: transform 0.16s, box-shadow 0.16s;
+}
+.stat-card:hover { transform: translateY(-1.5px); box-shadow: var(--shadow); }
+.stat-value {
+  font-size: 21px; font-weight: 750; line-height: 1.1;
+  font-variant-numeric: tabular-nums; letter-spacing: 0.3px;
+}
+.stat-label { font-size: 10.5px; color: var(--text-faint); margin-top: 3px; letter-spacing: 0.6px; }
+.stat-card.hot .stat-value { color: var(--accent); }
+.stat-card.danger { border-color: rgba(255, 107, 107, 0.4); background: color-mix(in srgb, var(--red) 8%, var(--card)); }
+.stat-card.danger .stat-value { color: var(--red); }
+.stat-card.warn .stat-value { color: var(--red); opacity: 0.85; }
+.stat-card.goal .stat-value { color: var(--green); }
+.stat-card.calm .stat-value { color: var(--text-dim); }
+
+/* 便签列表色点 */
+.note-dot {
+  width: 12px; height: 12px; border-radius: 4px; flex-shrink: 0;
+  margin-top: 3px; border: 1px solid rgba(0,0,0,0.12);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+}

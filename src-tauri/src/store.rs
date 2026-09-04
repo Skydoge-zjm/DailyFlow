@@ -31,6 +31,38 @@ impl Store {
         }
     }
 
+    /// 带文件锁的读-改-写：锁内执行 `f(data)`，返回其结果。
+    /// 防止 CLI 与 GUI 并发 load-modify-save 互相覆盖（前者的修改会被后者盖掉）。
+    pub fn with_lock<T>(
+        &self,
+        timeout_ms: u64,
+        f: impl FnOnce(&mut Data) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let lock_path = self.path.with_extension("lock");
+        let start = std::time::Instant::now();
+        loop {
+            match fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&lock_path)
+            {
+                Ok(_) => break,
+                Err(_) if start.elapsed().as_millis() < timeout_ms as u128 => {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Err(e) => return Err(format!("获取数据锁超时（另一进程可能正在写入）: {}", e)),
+            }
+        }
+        let mut data = self.load();
+        let result = f(&mut data);
+        // 无论操作成败都释放锁；操作成功才落盘
+        let _ = fs::remove_file(&lock_path);
+        if result.is_ok() {
+            self.save(&data)?;
+        }
+        result
+    }
+
     /// 原子写：先写临时文件，再 rename 覆盖；写前滚动备份。
     pub fn save(&self, data: &Data) -> Result<(), String> {
         if self.path.exists() {
@@ -39,10 +71,8 @@ impl Store {
         let json = serde_json::to_string_pretty(data).map_err(|e| e.to_string())?;
         let tmp = self.path.with_extension("json.tmp");
         fs::write(&tmp, json).map_err(|e| e.to_string())?;
-        // Windows 上 rename 覆盖已存在文件：先移除旧的
-        if self.path.exists() {
-            let _ = fs::remove_file(&self.path);
-        }
+        // Windows 的 std::fs::rename 支持原子覆盖已存在文件；
+        // 旧实现先 remove 再 rename，中间有窗口让并发读者读到"文件不存在"而误判为空数据
         fs::rename(&tmp, &self.path).map_err(|e| e.to_string())?;
         Ok(())
     }

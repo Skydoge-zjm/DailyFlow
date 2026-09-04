@@ -1,8 +1,31 @@
 use tauri::{
     menu::{Menu, MenuItem},
+    tray::TrayIcon,
     tray::TrayIconBuilder,
     AppHandle, Manager,
 };
+
+/// 根据今日未完成任务数切换托盘图标（alert=有待办橙点 / idle=灰调）
+pub fn update_tray_state(app: &AppHandle, pending_today: usize, overdue: usize) {
+    let tray: Option<TrayIcon> = app.tray_by_id("main-tray");
+    if let Some(tray) = tray {
+        let icon_path = if pending_today > 0 || overdue > 0 {
+            "icons/tray/alert.png"
+        } else {
+            "icons/tray/idle.png"
+        };
+        if let Ok(img) = tauri::image::Image::from_path(icon_path) {
+            let _ = tray.set_icon(Some(img));
+        }
+        let tip = match (pending_today, overdue) {
+            (0, 0) => "DailyFlow - 今日无待办".to_string(),
+            (p, 0) => format!("DailyFlow - 今日待办 {} 项", p),
+            (0, o) => format!("DailyFlow - ⚠ 逾期 {} 项", o),
+            (p, o) => format!("DailyFlow - 今日 {} 项 · 逾期 {} 项", p, o),
+        };
+        let _ = tray.set_tooltip(Some(tip.as_str()));
+    }
+}
 
 pub fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     use tauri::menu::{PredefinedMenuItem, Submenu};
@@ -26,7 +49,9 @@ pub fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
         .menu(&menu)
         .show_menu_on_left_click(true)
         .tooltip("DailyFlow - AI 日程管理");
-    if let Some(icon) = app.default_window_icon() {
+    if let Ok(img) = tauri::image::Image::from_path("icons/tray/idle.png") {
+        tray = tray.icon(img);
+    } else if let Some(icon) = app.default_window_icon() {
         tray = tray.icon(icon.to_owned());
     }
     tray.build(app)?;

@@ -48,6 +48,7 @@ fn run_gui() {
             // 主窗口在 tauri.conf.json 中定义；这里同步便签窗口
             let v = serde_json::to_value(&data).unwrap_or(serde_json::json!({}));
             windows::sync_note_windows(app.handle(), &v);
+            update_tray_from_data(app.handle(), &data);
 
             // 周期性检测 data.json 外部变更（CLI 写入），推送给前端
             let handle = app.handle().clone();
@@ -63,6 +64,7 @@ fn run_gui() {
                             use tauri::Emitter;
                             let _ = handle.emit("data-changed", &v);
                             windows::sync_note_windows(&handle, &v);
+                            update_tray_from_data(&handle, &d);
                         }
                     }
                 }
@@ -97,6 +99,22 @@ fn run_gui() {
 
 fn store_mtime(p: &std::path::Path) -> Option<std::time::SystemTime> {
     std::fs::metadata(p).and_then(|m| m.modified()).ok()
+}
+
+/// 依据数据更新托盘图标状态与提示（今日待办数/逾期数）
+fn update_tray_from_data(app: &tauri::AppHandle, d: &model::Data) {
+    let today = timeparse::today_str();
+    let pending = d
+        .tasks
+        .iter()
+        .filter(|t| t.date == today && !t.done && t.kind != model::TaskKind::Goal)
+        .count();
+    let overdue = d
+        .tasks
+        .iter()
+        .filter(|t| !t.done && t.kind != model::TaskKind::Goal && t.date != "" && t.date < today)
+        .count();
+    tray::update_tray_state(app, pending, overdue);
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
