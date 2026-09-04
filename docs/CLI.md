@@ -38,6 +38,8 @@ dailyflow task clear-done [date]  # 清理已完成
 - goal 类型 `--date` 可省略（无目标日）；`task edit <id> --date ""` 可清掉目标日。
 - `task list today` 只显示 normal/deadline 中属于今天的任务（长期目标不掺进来，另有 `list goal`）。
 - `day today` 的返回额外带 `goals_open`（进行中的长期目标数），并把这些目标附在 tasks 尾部，方便 AI 一并播报。
+- `task list week` = 今天起 7 天内（不含过去逾期；逾期用 `list overdue`）。
+- `created_at`/`completed_at` 为**本地时间**（无时区后缀），格式 `YYYY-MM-DDTHH:MM:SS`。
 
 ### 桌面便签
 
