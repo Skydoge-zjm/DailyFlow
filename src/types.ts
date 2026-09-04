@@ -1,14 +1,16 @@
 export type Priority = "low" | "normal" | "high";
+export type TaskKind = "normal" | "deadline" | "goal";
 
 export interface Task {
   id: string;
   title: string;
   notes: string;
-  date: string;
+  date: string; // normal=归属日; deadline=截止日; goal=可选目标日(""=无)
   start: string | null;
   end: string | null;
   done: boolean;
   priority: Priority;
+  kind: TaskKind;
   tags: string[];
   created_at: string;
   completed_at: string | null;

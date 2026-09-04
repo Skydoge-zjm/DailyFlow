@@ -42,12 +42,23 @@ async function reload() {
 
 function apply(d: Data) {
   const today = todayStr();
+  // 今日任务 + 今日到期截止任务（长期目标不进悬浮窗，避免噪音）
   const tasks = d.tasks
-    .filter((t) => t.date === today)
+    .filter((t) => t.date === today && (t.kind !== "goal" || false))
     .sort((a, b) => (a.start ?? "99:99").localeCompare(b.start ?? "99:99") || a.id.localeCompare(b.id));
-  currentData = { tasks, done: tasks.filter((t) => t.done).length, total: tasks.length };
+  const deadlinesSoon = d.tasks
+    .filter((t) => t.kind === "deadline" && !t.done && t.date > today && t.date <= plusDays(today, 3))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const all = [...tasks, ...deadlinesSoon];
+  currentData = { tasks: all, done: tasks.filter((t) => t.done).length, total: tasks.length };
   render();
   document.documentElement.dataset.theme = d.settings.theme === "light" ? "light" : "dark";
+}
+
+function plusDays(date: string, n: number): string {
+  const d = new Date(date + "T00:00:00");
+  d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function todayStr(): string {
@@ -220,6 +231,9 @@ function taskRow(t: Task): HTMLElement {
   const title = el("div", { class: "w-title" }, t.title);
   body.append(title);
   if (t.start) body.append(el("div", { class: "w-time" }, `🕐 ${t.start}${t.end ? "–" + t.end : ""}`));
+  if (t.kind === "deadline" && t.date && t.date !== todayStr()) {
+    body.append(el("div", { class: "w-time" }, `⏳ ${t.date.slice(5)} 截止`));
+  }
   row.append(pri, check, body);
   return row;
 }

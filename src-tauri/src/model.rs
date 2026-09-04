@@ -27,6 +27,34 @@ impl Priority {
     }
 }
 
+/// 任务类型：
+/// - Normal   短期待办：归属于某一天，当天做完即消失
+/// - Deadline 截止任务：在某天前必须完成（date = 截止日），显示剩余天数
+/// - Goal     长期任务：无固定日期（可选 target_date 目标日），持续挂在列表上
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum TaskKind {
+    #[default]
+    Normal,
+    Deadline,
+    Goal,
+}
+
+impl TaskKind {
+    pub fn parse(s: &str) -> Result<TaskKind, String> {
+        match s.trim().to_lowercase().as_str() {
+            "" | "normal" | "todo" | "短" | "短期" | "待办" => Ok(TaskKind::Normal),
+            "deadline" | "due" | "截止" | "期限" => Ok(TaskKind::Deadline),
+            "goal" | "long" | "longterm" | "长期" | "目标" => Ok(TaskKind::Goal),
+            other => err(format!("无效任务类型: {} (可选 normal/deadline/goal)", other)),
+        }
+    }
+}
+
+fn err<T>(msg: String) -> Result<T, String> {
+    Err(msg)
+}
+
 fn default_true() -> bool {
     true
 }
@@ -88,7 +116,7 @@ pub struct Task {
     pub title: String,
     #[serde(default)]
     pub notes: String,
-    pub date: String, // YYYY-MM-DD
+    pub date: String, // YYYY-MM-DD（normal=归属日；deadline=截止日；goal=可选目标日，空串=无）
     #[serde(default)]
     pub start: Option<String>, // HH:MM
     #[serde(default)]
@@ -97,6 +125,8 @@ pub struct Task {
     pub done: bool,
     #[serde(default)]
     pub priority: Priority,
+    #[serde(default)]
+    pub kind: TaskKind, // 任务类型（新增字段，旧数据默认 normal）
     #[serde(default)]
     pub tags: Vec<String>,
     pub created_at: String,

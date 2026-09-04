@@ -95,6 +95,34 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
       ),
     );
   }
+
+  // 截止任务（截止日 >= 选中日，未完成）——按剩余天数升序
+  const todayStr = fmtDate(new Date());
+  const deadlines = data.tasks
+    .filter((t) => t.kind === "deadline" && !t.done && t.date >= todayStr)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  if (deadlines.length) {
+    any = true;
+    listEl.append(
+      el("div", { class: "time-group" },
+        el("div", { class: "time-group-label" }, "⏳ 截止任务"),
+        ...deadlines.map((t) => taskItem(t, opts)),
+      ),
+    );
+  }
+
+  // 长期目标（未完成）——持续展示
+  const goals = data.tasks.filter((t) => t.kind === "goal" && !t.done);
+  if (goals.length) {
+    any = true;
+    listEl.append(
+      el("div", { class: "time-group" },
+        el("div", { class: "time-group-label" }, "🌱 长期目标"),
+        ...goals.map((t) => taskItem(t, opts)),
+      ),
+    );
+  }
+
   if (!any) {
     listEl.append(
       el("div", { class: "empty-state" },
@@ -171,8 +199,31 @@ function buildRing(p: number): HTMLElement {
   return wrap;
 }
 
+function daysUntil(date: string): number {
+  if (!date) return Infinity;
+  const d = new Date(date + "T00:00:00");
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  return Math.round((d.getTime() - now.getTime()) / 86400000);
+}
+
 function taskItem(t: Task, opts: RenderOpts): HTMLElement {
-  const overdue = !t.done && t.date < fmtDate(new Date());
+  const today = fmtDate(new Date());
+  const overdue = !t.done && t.date !== "" && t.date < today && t.kind !== "goal";
+  const meta: (Node | string | null)[] = [];
+  if (t.start) meta.push(el("span", { class: "time-chip" }, `🕐 ${t.start}${t.end ? "–" + t.end : ""}`));
+  if (overdue) meta.push(el("span", { class: "overdue" }, "已逾期"));
+  if (t.kind === "deadline" && t.date) {
+    const n = daysUntil(t.date);
+    const label = n === 0 ? "今天截止" : n === 1 ? "明天截止" : `剩 ${n} 天`;
+    meta.push(el("span", { class: n <= 1 ? "overdue" : "kind-chip" }, `⏳ ${label}`));
+  }
+  if (t.kind === "goal") {
+    if (t.date) meta.push(el("span", { class: "kind-chip goal-chip" }, `🎯 目标日 ${t.date.slice(5)}`));
+    else meta.push(el("span", { class: "kind-chip goal-chip" }, "🌱 长期"));
+  }
+  meta.push(...t.tags.map((tag) => el("span", { class: "tag-chip" }, `#${tag}`)));
+
   const item = el(
     "div",
     { class: `task-item pri-${t.priority}${t.done ? " done" : ""}` },
@@ -186,11 +237,7 @@ function taskItem(t: Task, opts: RenderOpts): HTMLElement {
     }, t.done ? "✓" : ""),
     el("div", { class: "task-body" },
       el("div", { class: "task-title" }, t.title),
-      el("div", { class: "task-meta" },
-        t.start ? el("span", { class: "time-chip" }, `🕐 ${t.start}${t.end ? "–" + t.end : ""}`) : null,
-        overdue ? el("span", { class: "overdue" }, "已逾期") : null,
-        ...t.tags.map((tag) => el("span", { class: "tag-chip" }, `#${tag}`)),
-      ),
+      el("div", { class: "task-meta" }, ...meta),
       t.notes ? el("div", { class: "task-meta" }, t.notes) : null,
     ),
     el("button", {
@@ -202,6 +249,8 @@ function taskItem(t: Task, opts: RenderOpts): HTMLElement {
       },
     }, "✕"),
   );
+  if (t.kind === "goal") item.classList.add("is-goal");
+  if (t.kind === "deadline") item.classList.add("is-deadline");
   return item;
 }
 
@@ -243,22 +292,43 @@ function quickAdd(opts: RenderOpts, selectedDate: string): HTMLElement {
     o.textContent = label;
     pri.append(o);
   }
+  const kind = document.createElement("select");
+  for (const [v, label] of [
+    ["normal", "✓ 待办"],
+    ["deadline", "⏳ 截止"],
+    ["goal", "🌱 长期"],
+  ] as const) {
+    const o = document.createElement("option");
+    o.value = v;
+    o.textContent = label;
+    kind.append(o);
+  }
   const form = el("form", {},
     title,
     el("div", { class: "qa-row" }, time, pri),
+    el("div", { class: "qa-row" }, kind),
     el("button", { class: "qa-submit", type: "submit" }, "＋ 添加到 " + selectedDate.slice(5)),
-    el("div", { class: "qa-hint" }, "AI 可直接 ", el("code", {}, "dailyflow task add"), " — 界面与 CLI 实时同步"),
+    el("div", { class: "qa-hint" }, "截止: 日期即 DDL · 长期: 常驻列表 · AI 可直接 ", el("code", {}, "dailyflow task add")),
   );
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!title.value.trim()) return;
-    const args = ["task", "add", title.value.trim(), "--date", selectedDate];
-    if (time.value.trim()) args.push("--start", time.value.trim());
+    const args = ["task", "add", title.value.trim(), "--kind", kind.value];
+    if (kind.value === "goal") {
+      // 长期目标：date 可空；用户手动选了日期则作为目标日
+      if (time.value.trim() && /^\d{4}-\d{2}-\d{2}$/.test(time.value.trim())) {
+        args.push("--date", time.value.trim());
+      }
+    } else {
+      args.push("--date", selectedDate);
+      if (time.value.trim()) args.push("--start", time.value.trim());
+    }
     if (pri.value) args.push("--priority", pri.value);
     const res = await opts.onCall(args);
     if (res.ok) {
       title.value = "";
       time.value = "";
+      kind.value = "normal";
       window.__dailyflow.rerender();
     }
   });

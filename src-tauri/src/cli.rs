@@ -76,6 +76,7 @@ fn dispatch(ctx: &Ctx, args: &[String]) -> Result<Value, String> {
                         &flag(r, "priority").unwrap_or_default(),
                         &flag(r, "tags").unwrap_or_default(),
                         &flag(r, "notes").unwrap_or_default(),
+                        &flag(r, "kind").unwrap_or_default(),
                     )
                 }
                 "list" | "ls" => {
@@ -83,6 +84,7 @@ fn dispatch(ctx: &Ctx, args: &[String]) -> Result<Value, String> {
                     ctx.task_list(&scope, &flag(r, "tag").unwrap_or_default())
                 }
                 "today" => ctx.task_list("today", &flag(r, "tag").unwrap_or_default()),
+                "goals" => ctx.task_list("goal", &flag(r, "tag").unwrap_or_default()),
                 "get" => ctx.task_get(&need(r, 0, "id")?),
                 "edit" => {
                     let id = need(r, 0, "id")?;
@@ -95,6 +97,7 @@ fn dispatch(ctx: &Ctx, args: &[String]) -> Result<Value, String> {
                         flag(r, "priority").as_deref(),
                         flag(r, "tags").as_deref(),
                         flag(r, "notes").as_deref(),
+                        flag(r, "kind").as_deref(),
                     )
                 }
                 "done" => ctx.task_set_done(&need(r, 0, "id")?, true),
@@ -181,13 +184,14 @@ fn help_markdown_value() -> Value {
         "date_formats": ["today", "tomorrow", "yesterday", "+N", "-N", "mon/tue/wed/thu/fri/sat/sun", "周一..周日", "YYYY-MM-DD"],
         "time_formats": ["9", "930", "9:30", "09:30", "下午3", "18点"],
         "commands": {
-            "task add <title> [--date D] [--start T] [--end T] [--priority low|normal|high] [--tags a,b] [--notes S]": "添加任务/日程（不传 --start 则是普通待办）",
-            "task list [today|tomorrow|week|all|overdue|YYYY-MM-DD|关键词] [--tag X]": "列出任务，默认 today",
+            "task add <title> [--kind normal|deadline|goal] [--date D] [--start T] [--end T] [--priority low|normal|high] [--tags a,b] [--notes S]": "添加任务。kind: normal=短期待办(默认,归属某天) / deadline=截止任务(--date 为截止日) / goal=长期任务(date 可空)",
+            "task list [today|week|all|overdue|goal|deadline|open|YYYY-MM-DD|关键词] [--tag X]": "列出任务，默认 today",
             "task get <id>": "查看单个任务",
-            "task edit <id> [--title|--date|--start|--end|--priority|--tags|--notes S]": "编辑任务；--tags \"\" 清空标签",
+            "task edit <id> [--title|--date|--start|--end|--priority|--kind|--tags|--notes S]": "编辑任务；--tags \"\" 清空标签；--date \"\" 清空日期(goal)",
             "task done|undone|toggle <id>": "完成/取消完成/切换",
             "task delete <id>": "删除任务",
             "task move <id> <date>": "改期",
+            "task goals": "列出所有长期任务",
             "task clear-done [date]": "清理已完成任务",
             "note add <body> [--title T] [--color yellow|green|blue|pink|purple|dark]": "新建桌面便签",
             "note list": "列出便签",
@@ -206,6 +210,8 @@ fn help_markdown_value() -> Value {
         "examples": [
             "dailyflow task add \"团队周会\" --start 10:00 --end 11:00 --tags work",
             "dailyflow task add \"review PR\" --priority high --date tomorrow",
+            "dailyflow task add \"论文终稿\" --kind deadline --date +7 --priority high",
+            "dailyflow task add \"每天读 30 分钟书\" --kind goal --tags 自我提升",
             "dailyflow task done t_a1b2c3",
             "dailyflow note add \"明天带伞\" --color blue",
             "dailyflow day today",

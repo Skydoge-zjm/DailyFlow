@@ -13,13 +13,20 @@
 
 ## 1. 命令速查表
 
-### 任务 / 日程（统一模型：有时间为日程，无时间为待办）
+### 任务 / 日程（三种类型）
+
+| kind | 含义 | date 语义 |
+|---|---|---|
+| `normal`（默认） | 短期待办 / 日程 | 归属日：当天做，做完结案 |
+| `deadline` | 截止任务 | **截止日**：必须在这天前（含）完成，列表显示剩余天数 |
+| `goal` | 长期任务 / 目标 | 可选目标日（`--date ""` 可无日期）：常驻「长期目标」区直到完成 |
 
 ```bash
-dailyflow task add "<标题>" [--date D] [--start T] [--end T] [--priority low|normal|high] [--tags a,b] [--notes "备注"]
-dailyflow task list [today|tomorrow|week|all|overdue|YYYY-MM-DD|<关键词>] [--tag X]
+dailyflow task add "<标题>" [--kind normal|deadline|goal] [--date D] [--start T] [--end T] [--priority low|normal|high] [--tags a,b] [--notes "备注"]
+dailyflow task list [today|week|all|overdue|goal|deadline|open|YYYY-MM-DD|<关键词>] [--tag X]
+dailyflow task goals              # = list goal
 dailyflow task get <id>
-dailyflow task edit <id> [--title S] [--date D] [--start T] [--end T] [--priority P] [--tags A] [--notes S]
+dailyflow task edit <id> [--title S] [--kind K] [--date D] [--start T] [--end T] [--priority P] [--tags A] [--notes S]
 dailyflow task done <id>          # 完成
 dailyflow task undone <id>        # 取消完成
 dailyflow task toggle <id>        # 切换
@@ -27,6 +34,10 @@ dailyflow task delete <id>
 dailyflow task move <id> <date>   # 改期
 dailyflow task clear-done [date]  # 清理已完成
 ```
+
+- goal 类型 `--date` 可省略（无目标日）；`task edit <id> --date ""` 可清掉目标日。
+- `task list today` 只显示 normal/deadline 中属于今天的任务（长期目标不掺进来，另有 `list goal`）。
+- `day today` 的返回额外带 `goals_open`（进行中的长期目标数），并把这些目标附在 tasks 尾部，方便 AI 一并播报。
 
 ### 桌面便签
 
@@ -82,6 +93,13 @@ dailyflow widget pin on|off  # 悬浮窗置顶开关（默认置顶，类似输�
 ```bash
 dailyflow task add "团队周会" --date tomorrow --start 10:00 --end 11:00 --tags work
 dailyflow task add "提交周报表" --date tomorrow --start 14:00 --priority high
+```
+
+### 场景 A2：用户说「我下周五要交论文，还有个健身计划要坚持」
+
+```bash
+dailyflow task add "论文终稿" --kind deadline --date fri --priority high
+dailyflow task add "每周健身 3 次" --kind goal --tags 健康
 ```
 
 ### 场景 B：用户说「看看我今天还剩什么」

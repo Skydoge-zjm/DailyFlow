@@ -41,12 +41,18 @@ impl Ctx {
         priority: &str,
         tags: &str,
         notes: &str,
+        kind: &str,
     ) -> CmdResult {
         if title.trim().is_empty() {
             return err("标题不能为空".into());
         }
+        let kind_v = crate::model::TaskKind::parse(kind)?;
+        // goal 类型：date 可空（无目标日）；deadline/normal 缺省今天
         let date_s = if date.trim().is_empty() {
-            today_str()
+            match kind_v {
+                crate::model::TaskKind::Goal => String::new(),
+                _ => today_str(),
+            }
         } else {
             parse_date(date)?.format("%Y-%m-%d").to_string()
         };
@@ -63,6 +69,7 @@ impl Ctx {
             end: if end_s.is_empty() { None } else { Some(end_s) },
             done: false,
             priority: parse_priority(priority)?,
+            kind: kind_v,
             tags: parse_tags(tags),
             created_at: now_iso(),
             completed_at: None,
@@ -91,14 +98,21 @@ impl Ctx {
         tasks.retain(|t| {
             let scope_ok = match scope.as_str() {
                 "" | "all" => true,
-                "today" => t.date == today,
+                "today" => match t.kind {
+                    crate::model::TaskKind::Goal => t.date == today, // goal 只在显式选中的日子出现
+                    crate::model::TaskKind::Deadline => t.date == today && !t.done, // 截止日当天
+                    crate::model::TaskKind::Normal => t.date == today,
+                },
                 "week" => {
                     // 未来 7 天（含今天）
                     let today_p = chrono::Local::now().date_naive();
                     let week_end = (today_p + chrono::Duration::days(6)).format("%Y-%m-%d").to_string();
                     t.date >= today && t.date <= week_end
                 }
-                "overdue" => t.date < today && !t.done,
+                "overdue" => t.date < today && !t.done && t.kind != crate::model::TaskKind::Goal,
+                "goal" | "goals" | "long" => t.kind == crate::model::TaskKind::Goal,
+                "deadline" | "deadlines" => t.kind == crate::model::TaskKind::Deadline,
+                "open" => !t.done,
                 _ => match today_d {
                     Some(pd) => t.date == pd.format("%Y-%m-%d").to_string(),
                     None => t.title.to_lowercase().contains(&scope.to_lowercase()),
@@ -129,6 +143,7 @@ impl Ctx {
         priority: Option<&str>,
         tags: Option<&str>,
         notes: Option<&str>,
+        kind: Option<&str>,
     ) -> CmdResult {
         let mut d = self.load();
         {
@@ -141,7 +156,10 @@ impl Ctx {
                 }
             }
             if let Some(v) = date {
-                if !v.trim().is_empty() {
+                if v.trim().is_empty() {
+                    // 允许清空日期（goal 无目标日）
+                    t.date = String::new();
+                } else {
                     t.date = parse_date(v)?.format("%Y-%m-%d").to_string();
                 }
             }
@@ -156,6 +174,11 @@ impl Ctx {
             if let Some(v) = priority {
                 if !v.trim().is_empty() {
                     t.priority = parse_priority(v)?;
+                }
+            }
+            if let Some(v) = kind {
+                if !v.trim().is_empty() {
+                    t.kind = crate::model::TaskKind::parse(v)?;
                 }
             }
             if let Some(v) = tags {
@@ -202,7 +225,7 @@ impl Ctx {
     }
 
     pub fn task_move(&self, id: &str, date: &str) -> CmdResult {
-        self.task_edit(id, None, Some(date), None, None, None, None, None)
+        self.task_edit(id, None, Some(date), None, None, None, None, None, None)
     }
 
     pub fn task_clear_done(&self, date: &str) -> CmdResult {
@@ -353,19 +376,28 @@ impl Ctx {
         let pd = parse_date(if date.trim().is_empty() { "today" } else { date })?;
         let date_s = pd.format("%Y-%m-%d").to_string();
         let d = self.load();
-        let tasks: Vec<&Task> = d
+        // 当天任务 + 需要关注的其他类型（进行中的长期目标 / 即将到期的截止任务）
+        let mut tasks: Vec<&Task> = d
             .tasks
             .iter()
             .filter(|t| t.date == date_s)
             .collect();
+        let goals: Vec<&Task> = d
+            .tasks
+            .iter()
+            .filter(|t| t.kind == crate::model::TaskKind::Goal && !t.done && t.date != date_s)
+            .collect();
         let total = tasks.len();
         let done = tasks.iter().filter(|t| t.done).count();
+        let goals_open = goals.len();
+        tasks.extend(goals);
         ok(json!({
             "date": date_s,
             "weekday": weekday_cn(pd),
             "total": total,
             "done": done,
             "pending": total - done,
+            "goals_open": goals_open,
             "tasks": tasks,
         }))
     }
@@ -378,7 +410,22 @@ impl Ctx {
         let overdue = d
             .tasks
             .iter()
-            .filter(|t| !t.done && t.date < today)
+            .filter(|t| {
+                !t.done
+                    && t.date < today
+                    && t.date != ""
+                    && t.kind != crate::model::TaskKind::Goal
+            })
+            .count();
+        let goals_open = d
+            .tasks
+            .iter()
+            .filter(|t| t.kind == crate::model::TaskKind::Goal && !t.done)
+            .count();
+        let deadlines_open = d
+            .tasks
+            .iter()
+            .filter(|t| t.kind == crate::model::TaskKind::Deadline && !t.done)
             .count();
         let (date_total, date_done) = if date.trim().is_empty() {
             (None, None)
@@ -395,6 +442,8 @@ impl Ctx {
             "tasks_done": done_all,
             "tasks_open": total_all - done_all,
             "overdue": overdue,
+            "goals_open": goals_open,
+            "deadlines_open": deadlines_open,
             "date": date_total.map(|_| json!({
                 "date": parse_date(if date.trim().is_empty() { "today" } else { date }).unwrap().format("%Y-%m-%d").to_string(),
                 "total": date_total.unwrap(),
