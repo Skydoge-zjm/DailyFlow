@@ -164,6 +164,7 @@ function build() {
   }
 
   let posT: number | undefined;
+  let lastSavedPos = "";
   function savePosSoon() {
     window.clearTimeout(posT);
     posT = window.setTimeout(savePos, 600);
@@ -174,7 +175,13 @@ function build() {
     const pos = await win.outerPosition();
     const f = await win.scaleFactor();
     // outerPosition 返回物理像素，需整体除以缩放得到逻辑坐标
-    await invoke("fe_widget_set_pos", { x: Math.round(pos.x / f), y: Math.round(pos.y / f) });
+    const x = Math.round(pos.x / f);
+    const y = Math.round(pos.y / f);
+    // 位置没变就不写盘：避免 mtime 抖动触发主窗口无谓重渲染
+    const key = `${x},${y}`;
+    if (key === lastSavedPos) return;
+    lastSavedPos = key;
+    await invoke("fe_widget_set_pos", { x, y });
   }
 
   function mkBtn(text: string, title: string, fn: () => void): HTMLButtonElement {

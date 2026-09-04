@@ -282,6 +282,11 @@ function weekCal(data: Data, selected: string, today: string, opts: RenderOpts):
   return el("div", { class: "week-cal" }, el("h3", {}, "本周"), grid);
 }
 
+// 快速添加表单的跨重渲染状态（renderApp 会全量重建 DOM，
+// 后端 data-changed 事件每 800ms 可能触发一次重建；若不保留，用户填到一半的
+// 标题/时间/类型会被重置——例如选了"长期"后点别处又跳回"待办"）
+let qaState = { title: "", time: "", kind: "normal", pri: "" };
+
 function quickAdd(opts: RenderOpts, selectedDate: string): HTMLElement {
   const title = el("input", { placeholder: "要做什么？" });
   const time = el("input", { placeholder: "时间(可空, 如 9:30)", style: "max-width:130px" });
@@ -303,6 +308,15 @@ function quickAdd(opts: RenderOpts, selectedDate: string): HTMLElement {
     o.textContent = label;
     kind.append(o);
   }
+  // 恢复上次未提交的输入
+  title.value = qaState.title;
+  time.value = qaState.time;
+  kind.value = qaState.kind;
+  pri.value = qaState.pri;
+  title.addEventListener("input", () => (qaState.title = title.value));
+  time.addEventListener("input", () => (qaState.time = time.value));
+  kind.addEventListener("change", () => (qaState.kind = kind.value));
+  pri.addEventListener("change", () => (qaState.pri = pri.value));
   const form = el("form", {},
     title,
     el("div", { class: "qa-row" }, time, pri),
@@ -329,6 +343,8 @@ function quickAdd(opts: RenderOpts, selectedDate: string): HTMLElement {
       title.value = "";
       time.value = "";
       kind.value = "normal";
+      pri.value = "";
+      qaState = { title: "", time: "", kind: "normal", pri: "" };
       window.__dailyflow.rerender();
     }
   });

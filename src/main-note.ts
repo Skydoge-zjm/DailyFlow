@@ -132,18 +132,21 @@ function setupNote(id: string): void {
   // 保存窗口位置/大小
   window.addEventListener("resize", savePos);
   window.setInterval(savePos, 3000);
+  let lastSaved = "";
   async function savePos() {
     // @ts-expect-error Tauri window API
     const win = window.__TAURI__.window.getCurrentWindow();
     const pos = await win.outerPosition();
     const size = await win.outerSize();
     const f = await win.scaleFactor();
-    await invoke("fe_set_note_pos", {
-      id,
-      x: Math.round(pos.x),
-      y: Math.round(pos.y),
-      w: size.width / f,
-      h: size.height / f,
-    });
+    const x = Math.round(pos.x);
+    const y = Math.round(pos.y);
+    const w = Math.round(size.width / f);
+    const h = Math.round(size.height / f);
+    // 位置没变就不写盘：避免 mtime 抖动触发主窗口无谓重渲染
+    const key = `${x},${y},${w},${h}`;
+    if (key === lastSaved) return;
+    lastSaved = key;
+    await invoke("fe_set_note_pos", { id, x, y, w, h });
   }
 }
