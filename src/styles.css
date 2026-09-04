@@ -416,3 +416,21 @@ body[data-view="widget"] { overflow: hidden; background: transparent; }
 .tp-btn:hover { color: var(--text); border-color: var(--text-faint); }
 .tp-btn.primary { background: var(--accent); color: #fff; border-color: transparent; }
 .tp-btn.primary:hover { filter: brightness(1.08); color: #fff; }
+
+/* ============ 行内编辑 & 撤销 toast ============ */
+.task-inline-input {
+  font-size: 14px; padding: 4px 8px; border-radius: 7px;
+  background: var(--bg-soft); border: 1.5px solid var(--accent);
+  outline: none; width: 100%; color: var(--text);
+  font-family: inherit;
+}
+.toast-undo {
+  margin-left: 12px; padding: 3px 12px; border-radius: 7px;
+  background: var(--accent); color: #fff; font-size: 12px; font-weight: 700;
+  transition: filter 0.15s;
+}
+.toast-undo:hover { filter: brightness(1.12); }
+
+/* ============ 空状态 & 微调 ============ */
+.empty-title { font-size: 14px; font-weight: 600; color: var(--text-dim); margin-top: 4px; }
+.empty-hint { font-size: 11px; margin-top: 7px; opacity: 0.8; letter-spacing: 0.2px; }

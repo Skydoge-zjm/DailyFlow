@@ -5,11 +5,22 @@ use tauri::{
 };
 
 pub fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
+    use tauri::menu::{PredefinedMenuItem, Submenu};
     let show = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
-    let widget = MenuItem::with_id(app, "widget", "今日待办悬浮窗", true, None::<&str>)?;
+    let widget = MenuItem::with_id(app, "widget", "显示 / 隐藏今日悬浮窗", true, None::<&str>)?;
     let new_note = MenuItem::with_id(app, "new_note", "新建便签", true, None::<&str>)?;
+
+    // 便签子菜单：显示/隐藏全部 + 各便签单独开关
+    let note_all_show = MenuItem::with_id(app, "note_all_show", "显示全部便签", true, None::<&str>)?;
+    let note_all_hide = MenuItem::with_id(app, "note_all_hide", "隐藏全部便签", true, None::<&str>)?;
+    let submenu_items: Vec<&dyn tauri::menu::IsMenuItem<_>> =
+        vec![&note_all_show, &note_all_hide];
+    let note_menu = Submenu::with_id_and_items(app, "notes-sub", "便签", true, &submenu_items)?;
+
+    let sep1 = PredefinedMenuItem::separator(app)?;
+    let sep2 = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "退出 DailyFlow", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &widget, &new_note, &quit])?;
+    let menu = Menu::with_items(app, &[&show, &sep1, &widget, &note_menu, &new_note, &sep2, &quit])?;
 
     let mut tray = TrayIconBuilder::with_id("main-tray")
         .menu(&menu)
@@ -60,6 +71,22 @@ pub fn on_tray_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
                     let _ = crate::windows::open_note_window(app, &v["id"].as_str().unwrap_or(""), &val);
                 }
             }
+        }
+        "note_all_show" | "note_all_hide" => {
+            let show = event.id().as_ref() == "note_all_show";
+            let c = crate::domain::Ctx {
+                store: crate::store::Store::new(crate::app_paths()),
+            };
+            let mut d = c.store.load();
+            for n in &mut d.notes {
+                n.visible = show;
+                n.updated_at = crate::timeparse::now_iso();
+            }
+            let _ = c.store.save(&d);
+            let v = serde_json::to_value(&d).unwrap_or(serde_json::json!({}));
+            use tauri::Emitter;
+            let _ = app.emit("data-changed", &v);
+            crate::windows::sync_note_windows(app, &v);
         }
         "quit" => {
             app.exit(0);

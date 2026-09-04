@@ -20,6 +20,7 @@ declare global {
       call: (args: string[]) => Promise<{ ok: boolean; data?: unknown; error?: string }>;
       rerender: () => void;
       toast: (msg: string, isErr?: boolean) => void;
+      undoToast: (msg: string, onUndo: () => Promise<void>) => void;
     };
   }
 }
@@ -62,6 +63,24 @@ function toast(msg: string, isErr = false) {
     t.classList.remove("show");
     setTimeout(() => t.remove(), 250);
   }, 2200);
+}
+
+/** 带撤销按钮的 toast（删除误操作恢复用） */
+function undoToast(msg: string, onUndo: () => Promise<void>): void {
+  document.querySelector(".toast")?.remove();
+  const btn = el("button", { class: "toast-undo" }, "撤销");
+  const t = el("div", { class: "toast" }, msg, btn);
+  btn.addEventListener("click", () => {
+    void onUndo();
+    t.remove();
+  });
+  document.body.appendChild(t);
+  requestAnimationFrame(() => t.classList.add("show"));
+  window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => {
+    t.classList.remove("show");
+    setTimeout(() => t.remove(), 250);
+  }, 5000);
 }
 
 async function call(args: string[]): Promise<{ ok: boolean; data?: unknown; error?: string }> {
@@ -135,6 +154,7 @@ window.addEventListener("DOMContentLoaded", () => {
     call,
     rerender: render,
     toast,
+    undoToast,
   };
 
   reload();
@@ -142,8 +162,16 @@ window.addEventListener("DOMContentLoaded", () => {
   // 后端文件监听推送（CLI 修改 data.json 后自动刷新）
   // @ts-expect-error Tauri event API
   const { listen } = window.__TAURI__.event;
+  // rAF 合帧：连续事件（如批量 CLI 操作）只触发一次渲染，且不与浏览器绘制争帧
+  let rafPending = false;
   listen("data-changed", async (evt: { payload: unknown }) => {
     data = evt.payload as Data;
-    render();
+    if (!rafPending) {
+      rafPending = true;
+      requestAnimationFrame(() => {
+        rafPending = false;
+        render();
+      });
+    }
   });
 });

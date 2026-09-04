@@ -129,8 +129,8 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
     listEl.append(
       el("div", { class: "empty-state" },
         el("div", { class: "big" }, "🌤"),
-        el("div", {}, "这一天还没有安排"),
-        el("div", { style: "font-size:11px;margin-top:6px" }, "右侧快速添加，或让 AI 通过 CLI 帮你安排"),
+        el("div", { class: "empty-title" }, "这一天还没有安排"),
+        el("div", { class: "empty-hint" }, "双击标题可改任务 · 右侧快速添加 · 或让 AI 通过 CLI 帮你安排"),
       ),
     );
   }
@@ -143,7 +143,10 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
       el("h2", {}, "日程与待办"),
       el("span", { class: "count-badge" }, String(openCount)),
       el("div", { class: "spacer" }),
-      el("button", { class: "mini-btn", onclick: async () => { await opts.onCall(["task", "clear-done", selectedDate]); opts.onCall([]); location.reload(); } }, "清理已完成"),
+      selectedDate !== today
+        ? el("button", { class: "mini-btn", onclick: () => opts.onSelectDate(today) }, "← 回到今天")
+        : null,
+      el("button", { class: "mini-btn", onclick: async () => { await opts.onCall(["task", "clear-done", selectedDate]); window.__dailyflow.rerender(); } }, "清理已完成"),
     ),
     listEl,
   );
@@ -226,6 +229,7 @@ function taskItem(t: Task, opts: RenderOpts): HTMLElement {
   }
   meta.push(...t.tags.map((tag) => el("span", { class: "tag-chip" }, `#${tag}`)));
 
+  const titleEl = el("div", { class: "task-title" }, t.title);
   const item = el(
     "div",
     { class: `task-item pri-${t.priority}${t.done ? " done" : ""}` },
@@ -238,7 +242,7 @@ function taskItem(t: Task, opts: RenderOpts): HTMLElement {
       },
     }, t.done ? "✓" : ""),
     el("div", { class: "task-body" },
-      el("div", { class: "task-title" }, t.title),
+      titleEl,
       el("div", { class: "task-meta" }, ...meta),
       t.notes ? el("div", { class: "task-meta" }, t.notes) : null,
     ),
@@ -246,14 +250,67 @@ function taskItem(t: Task, opts: RenderOpts): HTMLElement {
       class: "task-del",
       title: "删除",
       onclick: async () => {
-        await opts.onCall(["task", "delete", t.id]);
-        window.__dailyflow.rerender();
+        // 删除前记下快照，误删可一键撤销
+        const snapshot = JSON.stringify(t);
+        const res = await opts.onCall(["task", "delete", t.id]);
+        if (res.ok) {
+          window.__dailyflow.rerender();
+          window.__dailyflow.undoToast("已删除任务", async () => {
+            const old = JSON.parse(snapshot) as Task;
+            const args = ["task", "add", old.title, "--kind", old.kind, "--date", old.date || "today"];
+            if (old.start) args.push("--start", old.start);
+            if (old.end) args.push("--end", old.end);
+            if (old.priority !== "normal") args.push("--priority", old.priority);
+            if (old.tags.length) args.push("--tags", old.tags.join(","));
+            if (old.notes) args.push("--notes", old.notes);
+            if (old.done) {
+              await opts.onCall(args);
+              const all = window.__dailyflow.data.tasks;
+              const newly = all.length ? all[all.length - 1] : undefined;
+              await opts.onCall(["task", "done", (newly as Task | undefined)?.id ?? ""]);
+            }
+            window.__dailyflow.rerender();
+          });
+        }
       },
     }, "✕"),
   );
   if (t.kind === "goal") item.classList.add("is-goal");
   if (t.kind === "deadline") item.classList.add("is-deadline");
+
+  // 双击标题 → 行内编辑（标题 + 时间），Enter 保存 / Esc 取消
+  titleEl.addEventListener("dblclick", () => beginInlineEdit(titleEl, t, opts));
+  titleEl.title = "双击编辑";
   return item;
+}
+
+/** 双击行内编辑：标题输入框替换标题文本，可选时间输入框 */
+function beginInlineEdit(titleEl: HTMLElement, t: Task, opts: RenderOpts): void {
+  if (titleEl.querySelector("input")) return; // 已在编辑
+  const old = t.title;
+  const input = document.createElement("input");
+  input.className = "task-inline-input";
+  input.value = old;
+  titleEl.replaceWith(input);
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+
+  let done = false;
+  const finish = async (save: boolean) => {
+    if (done) return;
+    done = true;
+    const val = input.value.trim();
+    if (save && val && val !== old) {
+      await opts.onCall(["task", "edit", t.id, "--title", val]);
+    }
+    window.__dailyflow.rerender();
+  };
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") void finish(true);
+    else if (e.key === "Escape") void finish(false);
+    e.stopPropagation();
+  });
+  input.addEventListener("blur", () => void finish(true));
 }
 
 function weekCal(data: Data, selected: string, today: string, opts: RenderOpts): HTMLElement {
