@@ -1,0 +1,17 @@
+# Node
+node_modules/
+dist/
+
+# Rust
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# 本地测试数据
+*.json.tmp
+dailyflow-data/
+
+# IDE / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
