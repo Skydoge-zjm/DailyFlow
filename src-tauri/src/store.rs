@@ -59,6 +59,12 @@ impl Store {
         let backups = self.path.parent().unwrap().join("backups");
         let dest = backups.join(format!("data-{}.json", stamp));
         if !dest.exists() {
+            // 内容与最近一份备份相同则跳过（连续多次保存不产生重复备份）
+            if let Some(latest) = latest_backup(&backups) {
+                if same_file_contents(&self.path, &latest) {
+                    return Ok(());
+                }
+            }
             fs::copy(&self.path, &dest).map_err(|e| e.to_string())?;
             prune_backups(&backups, 10);
         }
@@ -112,4 +118,36 @@ fn format_epoch_local(secs: i64) -> String {
     let month = if mp < 10 { mp + 3 } else { mp - 9 };
     let year = if month <= 2 { y + 1 } else { y };
     format!("{:04}{:02}{:02}-{:02}{:02}{:02}", year, month, d, h, m, s)
+}
+
+/// backups 目录里最新的一份备份文件
+fn latest_backup(dir: &Path) -> Option<PathBuf> {
+    let mut files: Vec<_> = fs::read_dir(dir)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            e.file_name()
+                .to_str()
+                .map(|n| n.starts_with("data-") && !n.contains("corrupt"))
+                .unwrap_or(false)
+        })
+        .map(|e| e.path())
+        .collect();
+    files.sort();
+    files.pop()
+}
+
+/// 低成本比较两文件是否内容一致（长度 + 逐字节）
+fn same_file_contents(a: &Path, b: &Path) -> bool {
+    let (ma, mb) = match (fs::metadata(a), fs::metadata(b)) {
+        (Ok(x), Ok(y)) => (x, y),
+        _ => return false,
+    };
+    if ma.len() != mb.len() {
+        return false;
+    }
+    match (fs::read(a), fs::read(b)) {
+        (Ok(x), Ok(y)) => x == y,
+        _ => false,
+    }
 }
