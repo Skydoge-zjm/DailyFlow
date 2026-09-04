@@ -423,11 +423,26 @@ function quickAdd(opts: RenderOpts, selectedDate: string): HTMLElement {
   time.addEventListener("input", () => (qaState.time = time.value));
   kind.addEventListener("change", () => (qaState.kind = kind.value));
   pri.addEventListener("change", () => (qaState.pri = pri.value));
+  const submitBtn = el("button", { class: "qa-submit", type: "submit" }, "＋ 添加到 " + selectedDate.slice(5));
+  const syncKindUi = () => {
+    if (kind.value === "goal") {
+      time.placeholder = "目标日期(可空, 如 2026-12-31)";
+      submitBtn.textContent = "＋ 新长期目标";
+    } else if (kind.value === "deadline") {
+      time.placeholder = "时间(可空, 如 9:30)";
+      submitBtn.textContent = "＋ 截止于 " + selectedDate.slice(5);
+    } else {
+      time.placeholder = "时间(可空, 如 9:30)";
+      submitBtn.textContent = "＋ 添加到 " + selectedDate.slice(5);
+    }
+  };
+  kind.addEventListener("change", syncKindUi);
+  syncKindUi();
   const form = el("form", {},
     title,
     el("div", { class: "qa-row" }, time, pri),
     el("div", { class: "qa-row" }, kind),
-    el("button", { class: "qa-submit", type: "submit" }, "＋ 添加到 " + selectedDate.slice(5)),
+    submitBtn,
     el("div", { class: "qa-hint" }, "截止: 日期即 DDL · 长期: 常驻列表 · AI 可直接 ", el("code", {}, "dailyflow task add")),
   );
   form.addEventListener("submit", async (e) => {
@@ -664,6 +679,22 @@ function openThemePanel(opts: RenderOpts): void {
     actions,
   );
   backdrop.addEventListener("click", cancelPreview);
+  // Esc 关闭面板（等同点遮罩：撤销未应用的预览）
+  const escHandler = (e: KeyboardEvent) => {
+    if (e.key === "Escape") {
+      cancelPreview();
+      window.removeEventListener("keydown", escHandler);
+    }
+  };
+  window.addEventListener("keydown", escHandler);
+  // 面板移除时清理 Esc 监听（应用/导入路径也会 remove panel）
+  const observer = new MutationObserver(() => {
+    if (!document.body.contains(panel)) {
+      window.removeEventListener("keydown", escHandler);
+      observer.disconnect();
+    }
+  });
+  observer.observe(document.body, { childList: true });
   document.body.append(backdrop, panel);
 }
 
