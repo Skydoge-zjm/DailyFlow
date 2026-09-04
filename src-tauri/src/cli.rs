@@ -145,6 +145,20 @@ fn dispatch(ctx: &Ctx, args: &[String]) -> Result<Value, String> {
             }
         }
 
+        // ---------------- widget ----------------
+        "widget" => {
+            let sub = need(rest, 0, "widget 子命令")?.to_lowercase();
+            let r = &rest[1..];
+            match sub.as_str() {
+                "show" | "hide" => ctx.widget_show(sub == "show"),
+                "pin" => {
+                    let onoff = opt_positional(r, 0).unwrap_or_else(|| "on".into());
+                    ctx.widget_pin(!matches!(onoff.as_str(), "off" | "0" | "false" | "no"))
+                }
+                other => Err(format!("未知 widget 子命令: {} (可选 show/hide/pin on|off)", other)),
+            }
+        }
+
         // ---------------- aggregates ----------------
         "day" => ctx.day(&opt_positional(rest, 0).unwrap_or_default()),
         "stats" => ctx.stats(&opt_positional(rest, 0).unwrap_or_default()),
@@ -181,6 +195,8 @@ fn help_markdown_value() -> Value {
             "note delete <id>": "删除便签",
             "note show|hide <id>": "显示/隐藏便签窗口",
             "note pin <id> on|off": "置顶便签",
+            "widget show|hide": "显示/隐藏今日待办悬浮窗",
+            "widget pin on|off": "悬浮窗置顶开关",
             "day [date]": "某天总览（任务+完成统计）",
             "stats [date]": "统计",
             "dump": "输出完整数据 (data.json)",

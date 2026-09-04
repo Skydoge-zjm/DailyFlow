@@ -6,9 +6,10 @@ use tauri::{
 
 pub fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
+    let widget = MenuItem::with_id(app, "widget", "今日待办悬浮窗", true, None::<&str>)?;
     let new_note = MenuItem::with_id(app, "new_note", "新建便签", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出 DailyFlow", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &new_note, &quit])?;
+    let menu = Menu::with_items(app, &[&show, &widget, &new_note, &quit])?;
 
     let mut tray = TrayIconBuilder::with_id("main-tray")
         .menu(&menu)
@@ -34,6 +35,18 @@ pub fn on_tray_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
                 let _ = w.show();
                 let _ = w.unminimize();
                 let _ = w.set_focus();
+            }
+        }
+        "widget" => {
+            let c = crate::domain::Ctx {
+                store: crate::store::Store::new(crate::app_paths()),
+            };
+            let visible = c.store.load().settings.widget_visible;
+            let _ = c.widget_show(!visible);
+            if !visible {
+                let _ = crate::windows::open_widget_window(app);
+            } else {
+                crate::windows::close_widget_window(app);
             }
         }
         "new_note" => {

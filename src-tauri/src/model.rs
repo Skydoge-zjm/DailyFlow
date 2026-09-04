@@ -53,6 +53,15 @@ pub struct Settings {
     pub sticky_opacity: f64,
     #[serde(default)]
     pub autostart: bool,
+    // 今日悬浮窗状态
+    #[serde(default = "default_true")]
+    pub widget_visible: bool,
+    #[serde(default)]
+    pub widget_pinned: bool,
+    #[serde(default)]
+    pub widget_x: i32,
+    #[serde(default)]
+    pub widget_y: i32,
 }
 
 fn default_sticky_opacity() -> f64 {
@@ -65,6 +74,10 @@ impl Default for Settings {
             theme: Theme::Dark,
             sticky_opacity: default_sticky_opacity(),
             autostart: false,
+            widget_visible: true,
+            widget_pinned: true,
+            widget_x: 0,
+            widget_y: 0,
         }
     }
 }
@@ -196,4 +209,9 @@ pub fn default_note_position(index: usize) -> (i32, i32) {
     let base_x = 1300 + ((index % 5) as i32) * 36;
     let base_y = 120 + ((index % 7) as i32) * 44;
     (base_x, base_y)
+}
+
+/// 今日悬浮窗默认位置：屏幕右上角（启动时会校正到可见区域）
+pub fn default_widget_position() -> (i32, i32) {
+    (1560, 80)
 }

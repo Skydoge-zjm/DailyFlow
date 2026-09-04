@@ -79,6 +79,11 @@ fn run_gui() {
             commands::fe_set_note_pos,
             commands::fe_theme,
             commands::fe_show_main,
+            commands::fe_open_widget,
+            commands::fe_widget_drag,
+            commands::fe_widget_set_pos,
+            commands::fe_widget_pin,
+            commands::fe_widget_close,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

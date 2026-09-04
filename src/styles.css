@@ -253,6 +253,91 @@ body[data-view="note"] { overflow: hidden; background: transparent; }
 .note-body:focus { border: none; }
 .note-body::placeholder { color: var(--note-text); opacity: 0.4; }
 
+/* ============ 今日待办悬浮窗（输入法风格） ============ */
+body[data-view="widget"] { overflow: hidden; background: transparent; }
+
+.widget {
+  height: 100vh; display: flex; flex-direction: column;
+  border-radius: 14px; overflow: hidden;
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  backdrop-filter: blur(18px) saturate(1.3);
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+[data-theme="light"] .widget { box-shadow: 0 8px 32px rgba(30, 40, 60, 0.18); }
+
+.widget-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 10px 6px; cursor: grab; flex-shrink: 0;
+}
+.widget-head:active { cursor: grabbing; }
+.widget-head .w-date { font-size: 12px; font-weight: 700; color: var(--accent); }
+.widget-head .w-sub { font-size: 10px; color: var(--text-faint); }
+.widget-head .spacer { flex: 1; }
+.widget-btn {
+  width: 20px; height: 20px; border-radius: 6px; font-size: 11px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-faint); opacity: 0.75; transition: all 0.12s; flex-shrink: 0;
+}
+.widget-btn:hover { opacity: 1; background: var(--card-hover); color: var(--text); }
+.widget-btn.pinned { color: var(--accent); opacity: 1; }
+
+.widget-list { flex: 1; overflow-y: auto; padding: 2px 8px 6px; min-height: 0; }
+
+.w-task {
+  display: flex; align-items: flex-start; gap: 7px;
+  padding: 6px 6px; border-radius: 8px; transition: background 0.12s;
+}
+.w-task:hover { background: var(--card-hover); }
+.w-task.done { opacity: 0.5; }
+.w-task.done .w-title { text-decoration: line-through; color: var(--text-faint); }
+
+.w-check {
+  width: 15px; height: 15px; border-radius: 5px; flex-shrink: 0; margin-top: 1px;
+  border: 1.5px solid var(--text-faint); transition: all 0.15s;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: transparent; font-size: 9px;
+}
+.w-check:hover { border-color: var(--accent); }
+.w-task.done .w-check { background: var(--green); border-color: var(--green); color: #fff; }
+.w-body { flex: 1; min-width: 0; }
+.w-title { font-size: 12.5px; line-height: 1.35; word-break: break-all; }
+.w-time { font-size: 10px; color: var(--teal); font-weight: 600; }
+.w-pri { width: 3px; border-radius: 2px; align-self: stretch; background: var(--pri-normal); flex-shrink: 0; }
+.w-pri.high { background: var(--pri-high); }
+.w-pri.low { background: var(--pri-low); }
+
+.w-empty { text-align: center; color: var(--text-faint); font-size: 11.5px; padding: 22px 8px; line-height: 1.7; }
+.w-empty .big { font-size: 22px; }
+
+.w-foot { flex-shrink: 0; padding: 4px 8px 8px; }
+.w-addrow { display: flex; gap: 5px; }
+.w-addrow input {
+  flex: 1; min-width: 0; font-size: 12px; padding: 5px 9px; border-radius: 8px;
+  background: var(--bg-soft); border: 1px solid var(--border);
+}
+.w-addrow button {
+  font-size: 14px; font-weight: 700; color: var(--accent);
+  padding: 0 8px; border-radius: 8px; transition: background 0.12s;
+}
+.w-addrow button:hover { background: var(--accent-soft); }
+.w-summary {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10px; color: var(--text-faint); margin-top: 5px; padding: 0 2px;
+}
+.w-summary .bar { flex: 1; height: 3px; border-radius: 2px; background: var(--border); overflow: hidden; }
+.w-summary .bar i { display: block; height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.3s; }
+
+/* resize handle for widget (bottom-right) */
+.widget-resize {
+  position: fixed; right: 2px; bottom: 2px; width: 14px; height: 14px;
+  cursor: nwse-resize; z-index: 10;
+  background: linear-gradient(135deg, transparent 50%, var(--text-faint) 50%);
+  opacity: 0.35; border-radius: 3px;
+}
+.widget-resize:hover { opacity: 0.8; }
+
 /* 动画 */
 @keyframes pop-in { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: scale(1); } }
 .task-item { animation: pop-in 0.18s ease; }

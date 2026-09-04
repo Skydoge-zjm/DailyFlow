@@ -50,6 +50,13 @@ dailyflow help          # 命令速查（JSON）
 dailyflow version
 ```
 
+### 今日悬浮窗
+
+```bash
+dailyflow widget show|hide   # 显示/隐藏桌面右上角的今日待办悬浮窗
+dailyflow widget pin on|off  # 悬浮窗置顶开关（默认置顶，类似输入法悬浮窗）
+```
+
 ## 2. 参数格式
 
 ### 日期 `D`（宽松）

@@ -98,3 +98,46 @@ pub fn fe_show_main(app: AppHandle) {
         let _ = w.set_focus();
     }
 }
+
+// ---------- 今日悬浮窗 ----------
+
+#[tauri::command]
+pub fn fe_open_widget(app: AppHandle) -> Result<(), String> {
+    crate::windows::open_widget_window(&app)
+}
+
+#[tauri::command]
+pub fn fe_widget_drag(window: tauri::WebviewWindow) {
+    let _ = window.start_dragging();
+}
+
+#[tauri::command]
+pub fn fe_widget_set_pos(_app: AppHandle, x: i32, y: i32) -> Result<(), String> {
+    let c = Ctx {
+        store: Store::new(crate::app_paths()),
+    };
+    c.widget_set_pos(x, y)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn fe_widget_pin(app: AppHandle, pinned: bool) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window(crate::windows::WIDGET_LABEL) {
+        let _ = w.set_always_on_top(pinned);
+    }
+    let c = Ctx {
+        store: Store::new(crate::app_paths()),
+    };
+    c.widget_pin(pinned)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn fe_widget_close(app: AppHandle) -> Result<(), String> {
+    let c = Ctx {
+        store: Store::new(crate::app_paths()),
+    };
+    c.widget_show(false)?;
+    crate::windows::close_widget_window(&app);
+    Ok(())
+}

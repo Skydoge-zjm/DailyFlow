@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import "./main-note.ts";
+import "./main-widget.ts";
 import {
   renderApp,
   el,
@@ -87,6 +88,11 @@ function render(): void {
 
 // ---------- 事件 ----------
 window.addEventListener("DOMContentLoaded", () => {
+  // widget / note 子窗口有自己的入口模块；主逻辑只在主窗口跑
+  if (new URLSearchParams(location.search).has("view") || new URLSearchParams(location.search).has("note")) {
+    return;
+  }
+
   window.__dailyflow = {
     get data() {
       return data;

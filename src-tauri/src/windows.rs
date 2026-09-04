@@ -2,9 +2,58 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 pub const NOTE_WIN_PREFIX: &str = "note-";
+pub const WIDGET_LABEL: &str = "widget-today";
 
 pub fn note_label(id: &str) -> String {
     format!("{}{}", NOTE_WIN_PREFIX, id)
+}
+
+/// 打开（或刷新）今日待办悬浮窗（输入法风格）
+pub fn open_widget_window(app: &AppHandle) -> Result<(), String> {
+    if let Some(existing) = app.get_webview_window(WIDGET_LABEL) {
+        let _ = existing.show();
+        return Ok(());
+    }
+    let d = crate::store::Store::new(crate::app_paths()).load();
+    let (mut x, mut y) = if d.settings.widget_x != 0 || d.settings.widget_y != 0 {
+        (d.settings.widget_x, d.settings.widget_y)
+    } else {
+        crate::model::default_widget_position()
+    };
+    // 校正到主屏可见范围
+    if let Some(monitor) = app.primary_monitor().ok().flatten() {
+        let pos = monitor.position();
+        let size = monitor.size();
+        let (mw, mh) = (size.width as i32, size.height as i32);
+        x = x.clamp(pos.x, pos.x + mw - 240);
+        y = y.clamp(pos.y, pos.y + mh - 200);
+    }
+    let builder = WebviewWindowBuilder::new(
+        app,
+        WIDGET_LABEL,
+        WebviewUrl::App("index.html?view=widget".into()),
+    )
+    .title("今日待办")
+    .inner_size(236.0, 300.0)
+    .min_inner_size(200.0, 180.0)
+    .position(x as f64, y as f64)
+    .decorations(false)
+    .transparent(true)
+    .always_on_top(d.settings.widget_pinned)
+    .resizable(true)
+    .skip_taskbar(true)
+    .shadow(false);
+
+    builder
+        .build()
+        .map_err(|e| format!("创建悬浮窗失败: {}", e))?;
+    Ok(())
+}
+
+pub fn close_widget_window(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window(WIDGET_LABEL) {
+        let _ = w.close();
+    }
 }
 
 /// 打开（或刷新）一条便签窗口
@@ -41,7 +90,7 @@ pub fn open_note_window(app: &AppHandle, id: &str, note: &Value) -> Result<(), S
     Ok(())
 }
 
-/// 根据 data 同步便签窗口：visible → 显示/创建，不可见 → 隐藏/关闭
+/// 根据 data 同步便签与悬浮窗：visible → 显示/创建，不可见 → 隐藏/关闭
 pub fn sync_note_windows(app: &AppHandle, data: &Value) {
     let notes = data["notes"].as_array().cloned().unwrap_or_default();
     let want: Vec<(String, Value)> = notes
@@ -69,5 +118,19 @@ pub fn sync_note_windows(app: &AppHandle, data: &Value) {
             let _ = open_note_window(app, &id, &n);
         }
     }
+
+    // 今日悬浮窗跟随 settings.widget_visible
+    let widget_visible = data["settings"]["widget_visible"].as_bool().unwrap_or(true);
+    if widget_visible {
+        let _ = open_widget_window(app);
+    } else {
+        close_widget_window(app);
+    }
+
+    // 悬浮窗置顶状态跟随
+    if let Some(w) = app.get_webview_window(WIDGET_LABEL) {
+        let _ = w.set_always_on_top(data["settings"]["widget_pinned"].as_bool().unwrap_or(true));
+    }
+
     let _ = app.emit("note-synced", json!({}));
 }

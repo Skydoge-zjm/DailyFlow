@@ -323,6 +323,30 @@ impl Ctx {
         ok(json!({ "id": id, "pinned": pin }))
     }
 
+    // ---------- widget（今日悬浮窗） ----------
+
+    pub fn widget_show(&self, visible: bool) -> CmdResult {
+        let mut d = self.load();
+        d.settings.widget_visible = visible;
+        self.save(&d)?;
+        ok(json!({ "widget_visible": visible }))
+    }
+
+    pub fn widget_pin(&self, pinned: bool) -> CmdResult {
+        let mut d = self.load();
+        d.settings.widget_pinned = pinned;
+        self.save(&d)?;
+        ok(json!({ "widget_pinned": pinned }))
+    }
+
+    pub fn widget_set_pos(&self, x: i32, y: i32) -> CmdResult {
+        let mut d = self.load();
+        d.settings.widget_x = x;
+        d.settings.widget_y = y;
+        self.save(&d)?;
+        ok(json!({ "widget_x": x, "widget_y": y }))
+    }
+
     // ---------- aggregates ----------
 
     pub fn day(&self, date: &str) -> CmdResult {
