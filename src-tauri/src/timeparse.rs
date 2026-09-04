@@ -88,11 +88,8 @@ pub fn parse_time(s: &str) -> Result<String, String> {
         ),
         _ => return Err(format!("无效时间: {}", s)),
     };
-    let mut h = h + pm_offset;
-    // 930 → 9:30 已在上面拆分；下午3 → 15
-    if pm_offset > 0 && h < 12 {
-        h += 0; // 已加过
-    }
+    // 下午/晚上：12 点本身不加 12（中午 12 点），13-23 也不加（用户说"下午15点"较少见，尊原始值）
+    let h = if pm_offset > 0 && h < 12 { h + 12 } else { h };
     if h > 23 || m > 59 {
         return Err(format!("无效时间: {} (小时 0-23, 分钟 0-59)", s));
     }

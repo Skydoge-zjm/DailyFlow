@@ -96,10 +96,10 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
     );
   }
 
-  // 截止任务（截止日 >= 选中日，未完成）——按剩余天数升序
+  // 截止任务（截止日 >= 选中日，未完成，日期非空）——按剩余天数升序
   const todayStr = fmtDate(new Date());
   const deadlines = data.tasks
-    .filter((t) => t.kind === "deadline" && !t.done && t.date >= todayStr)
+    .filter((t) => t.kind === "deadline" && !t.done && t.date !== "" && t.date >= todayStr)
     .sort((a, b) => a.date.localeCompare(b.date));
   if (deadlines.length) {
     any = true;

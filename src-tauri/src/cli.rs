@@ -140,8 +140,12 @@ fn dispatch(ctx: &Ctx, args: &[String]) -> Result<Value, String> {
                 "hide" => ctx.note_show(&need(r, 0, "id")?, false),
                 "pin" => {
                     let id = need(r, 0, "id")?;
-                    let onoff = opt_positional(r, 1).unwrap_or_else(|| "on".into());
-                    let pin = !matches!(onoff.as_str(), "off" | "0" | "false" | "no");
+                    let onoff = opt_positional(r, 1).unwrap_or_else(|| "on".into()).to_lowercase();
+                    let pin = match onoff.as_str() {
+                        "on" | "1" | "true" | "yes" => true,
+                        "off" | "0" | "false" | "no" => false,
+                        other => return Err(format!("无效参数: {} (可选 on/off)", other)),
+                    };
                     ctx.note_pin(&id, pin)
                 }
                 other => Err(format!("未知 note 子命令: {} (见 help)", other)),
@@ -155,8 +159,12 @@ fn dispatch(ctx: &Ctx, args: &[String]) -> Result<Value, String> {
             match sub.as_str() {
                 "show" | "hide" => ctx.widget_show(sub == "show"),
                 "pin" => {
-                    let onoff = opt_positional(r, 0).unwrap_or_else(|| "on".into());
-                    ctx.widget_pin(!matches!(onoff.as_str(), "off" | "0" | "false" | "no"))
+                    let onoff = opt_positional(r, 0).unwrap_or_else(|| "on".into()).to_lowercase();
+                    match onoff.as_str() {
+                        "on" | "1" | "true" | "yes" => ctx.widget_pin(true),
+                        "off" | "0" | "false" | "no" => ctx.widget_pin(false),
+                        other => Err(format!("无效参数: {} (可选 on/off)", other)),
+                    }
                 }
                 other => Err(format!("未知 widget 子命令: {} (可选 show/hide/pin on|off)", other)),
             }

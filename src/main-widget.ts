@@ -42,9 +42,9 @@ async function reload() {
 
 function apply(d: Data) {
   const today = todayStr();
-  // 今日任务 + 今日到期截止任务（长期目标不进悬浮窗，避免噪音）
+  // 今日任务（normal/deadline 到期日）+ 3 天内将到期的截止任务（长期目标不进悬浮窗，避免噪音）
   const tasks = d.tasks
-    .filter((t) => t.date === today && (t.kind !== "goal" || false))
+    .filter((t) => t.date === today && t.kind !== "goal")
     .sort((a, b) => (a.start ?? "99:99").localeCompare(b.start ?? "99:99") || a.id.localeCompare(b.id));
   const deadlinesSoon = d.tasks
     .filter((t) => t.kind === "deadline" && !t.done && t.date > today && t.date <= plusDays(today, 3))
@@ -173,7 +173,8 @@ function build() {
     const win = window.__TAURI__.window.getCurrentWindow();
     const pos = await win.outerPosition();
     const f = await win.scaleFactor();
-    await invoke("fe_widget_set_pos", { x: Math.round(pos.x), y: Math.round(pos.y / f) });
+    // outerPosition 返回物理像素，需整体除以缩放得到逻辑坐标
+    await invoke("fe_widget_set_pos", { x: Math.round(pos.x / f), y: Math.round(pos.y / f) });
   }
 
   function mkBtn(text: string, title: string, fn: () => void): HTMLButtonElement {
@@ -223,8 +224,11 @@ function taskRow(t: Task): HTMLElement {
   check.addEventListener("click", async (e) => {
     e.stopPropagation();
     saving = true;
-    await invoke("fe_call", { args: ["task", "toggle", t.id] });
-    saving = false;
+    try {
+      await invoke("fe_call", { args: ["task", "toggle", t.id] });
+    } finally {
+      saving = false;
+    }
     await reload();
   });
   const body = el("div", { class: "w-body" });

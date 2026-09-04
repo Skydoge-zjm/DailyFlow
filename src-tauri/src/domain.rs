@@ -93,11 +93,13 @@ impl Ctx {
                 .then(a.start.clone().unwrap_or_else(|| "99:99".into()).cmp(&b.start.clone().unwrap_or_else(|| "99:99".into())))
                 .then(a.id.cmp(&b.id))
         });
-        let scope = scope.trim().to_lowercase();
-        let today_d = parse_date(if scope.is_empty() { "all" } else { &scope }).ok();
+        let scope_raw = scope.trim().to_lowercase();
+        // 空 scope = 默认 today（与文档一致）
+        let scope = if scope_raw.is_empty() { "today".to_string() } else { scope_raw };
+        let today_d = parse_date(if scope == "all" { "today" } else { &scope }).ok();
         tasks.retain(|t| {
             let scope_ok = match scope.as_str() {
-                "" | "all" => true,
+                "all" => true,
                 "today" => match t.kind {
                     crate::model::TaskKind::Goal => t.date == today, // goal 只在显式选中的日子出现
                     crate::model::TaskKind::Deadline => t.date == today && !t.done, // 截止日当天
@@ -179,6 +181,10 @@ impl Ctx {
             if let Some(v) = kind {
                 if !v.trim().is_empty() {
                     t.kind = crate::model::TaskKind::parse(v)?;
+                    // 转成 deadline/normal 但没有日期时，回落到今天，避免空日期破坏列表/日历逻辑
+                    if t.date.is_empty() && t.kind != crate::model::TaskKind::Goal {
+                        t.date = today_str();
+                    }
                 }
             }
             if let Some(v) = tags {
@@ -236,8 +242,11 @@ impl Ctx {
             Some(parse_date(date)?.format("%Y-%m-%d").to_string())
         };
         let before = d.tasks.len();
-        d.tasks
-            .retain(|t| !(t.done && date_s.as_deref().map(|x| t.date == x).unwrap_or(true)));
+        // 长期目标即使完成也保留（它是持续记录，不是一次性待办）；deadline/normal 完成后可清理
+        d.tasks.retain(|t| {
+            let done_in_scope = t.done && date_s.as_deref().map(|x| t.date == x).unwrap_or(true);
+            !(done_in_scope && t.kind != crate::model::TaskKind::Goal)
+        });
         let removed = before - d.tasks.len();
         self.save(&d)?;
         ok(json!({ "removed": removed }))

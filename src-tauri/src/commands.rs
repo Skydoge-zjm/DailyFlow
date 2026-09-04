@@ -10,10 +10,6 @@ fn ctx(_handle: &AppHandle) -> Ctx {
     }
 }
 
-fn notify_change(app: &AppHandle) {
-    let _ = app.emit("data-changed", serde_json::json!({ "ts": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0) }));
-}
-
 // ---------- 前端调用的命令 ----------
 
 #[tauri::command]
@@ -44,7 +40,12 @@ pub fn fe_call(app: AppHandle, args: Vec<String>) -> Value {
     };
     match crate::cli::dispatch_pub(&c, &args) {
         Ok(v) => {
-            notify_change(&app);
+            // 广播完整数据（与 lib.rs 文件监听线程的 payload 结构一致），所有窗口据此刷新
+            let d = c.store.load();
+            if let Ok(v) = serde_json::to_value(&d) {
+                let _ = app.emit("data-changed", &v);
+                crate::windows::sync_note_windows(&app, &v);
+            }
             v
         }
         Err(e) => serde_json::json!({ "ok": false, "error": e }),
