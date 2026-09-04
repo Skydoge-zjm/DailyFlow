@@ -68,7 +68,17 @@ function setupNote(id: string): void {
   wrap = document.createElement("div");
   wrap.className = "note-win";
   wrap.append(bar, bodyEl);
-  app.append(wrap);
+
+  // 右下角缩放手柄（无边框窗口的系统热区不可见，加个可发现的把手）
+  const resizeHandle = document.createElement("div");
+  resizeHandle.className = "note-resize";
+  resizeHandle.addEventListener("mousedown", (e) => {
+    e.stopPropagation();
+    // @ts-expect-error Tauri window API
+    void window.__TAURI__.window.getCurrentWindow().startResizeDragging("SouthEast");
+  });
+
+  app.append(wrap, resizeHandle);
 
   bar.addEventListener("mousedown", (e) => {
     if ((e.target as HTMLElement).closest(".note-btn")) return;

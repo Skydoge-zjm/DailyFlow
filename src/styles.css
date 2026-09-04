@@ -449,3 +449,12 @@ body[data-view="widget"] { overflow: hidden; background: transparent; }
 /* 任务 item 悬停时轻微上浮（class 系列通用，无边框主题靠 shadow） */
 .task-item { will-change: transform; }
 .task-item:hover { transform: translateY(-1px); }
+
+/* 便签右下角缩放手柄 */
+.note-resize {
+  position: fixed; right: 2px; bottom: 2px; width: 15px; height: 15px;
+  cursor: nwse-resize; z-index: 10;
+  background: linear-gradient(135deg, transparent 50%, rgba(0,0,0,0.28) 50%);
+  border-radius: 3px; opacity: 0.55;
+}
+.note-resize:hover { opacity: 1; }

@@ -18,6 +18,7 @@ let footEl: HTMLElement;
 let summaryEl: HTMLElement;
 let addInput: HTMLInputElement;
 let headSub: HTMLElement;
+let dateEl: HTMLElement;
 let currentData: WidgetData = { tasks: [], done: 0, total: 0 };
 let saving = false;
 
@@ -75,7 +76,7 @@ function build() {
   const now = new Date();
   const head = document.createElement("div");
   head.className = "widget-head";
-  const dateEl = document.createElement("span");
+  dateEl = document.createElement("span");
   dateEl.className = "w-date";
   dateEl.textContent = `${now.getMonth() + 1}/${now.getDate()}`;
   headSub = document.createElement("span");
@@ -127,7 +128,7 @@ function build() {
   resize.addEventListener("mousedown", (e) => {
     e.stopPropagation();
     // @ts-expect-error Tauri window API
-    window.__TAURI__.window.getCurrentWindow().startResizeDragging(2); // 2 = East? 实际枚举见下
+    window.__TAURI__.window.getCurrentWindow().startResizeDragging('SouthEast');
   });
 
   const wrap = document.createElement("div");
@@ -229,6 +230,11 @@ function render() {
   if (headSub) {
     const now = new Date();
     headSub.textContent = `${WD[now.getDay()]}${total ? ` · ${done}/${total}` : ""}`;
+  }
+  if (dateEl) {
+    // 跨天自动更新头部日期
+    const now = new Date();
+    dateEl.textContent = `${now.getMonth() + 1}/${now.getDate()}`;
   }
 }
 
