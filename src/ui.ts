@@ -1,12 +1,13 @@
 // 主窗口 UI 渲染（无框架，纯 DOM）
-import type { Data, Note, Task } from "./types.ts";
+import type { Data, Note, Settings, Task } from "./types.ts";
+import { PRESETS, THEME_VARS, type ThemeOverrides } from "./themes.ts";
 
 export interface RenderOpts {
   data: Data;
   selectedDate: string;
   onSelectDate: (d: string) => void;
   onCall: (args: string[]) => Promise<{ ok: boolean; data?: unknown; error?: string }>;
-  onTheme: (t: "dark" | "light") => void;
+  onSettings: (patch: Partial<Settings>) => Promise<void>;
   onOpenNote: (n: Note) => void;
   onNewNote: () => void;
 }
@@ -60,9 +61,10 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
     el("button", { class: "icon-btn", title: "新建便签", onclick: () => opts.onNewNote() }, "🗒"),
     el("button", {
       class: "icon-btn",
-      title: "切换主题",
-      onclick: () => opts.onTheme(data.settings.theme === "dark" ? "light" : "dark"),
+      title: "明暗切换",
+      onclick: () => void opts.onSettings({ theme: data.settings.theme === "dark" ? "light" : "dark" }),
     }, data.settings.theme === "dark" ? "☀️" : "🌙"),
+    el("button", { class: "icon-btn", title: "主题与外观", onclick: () => openThemePanel(opts) }, "🎨"),
   );
 
   // ===== 左列：任务 =====
@@ -389,4 +391,182 @@ function notesPanel(data: Data, opts: RenderOpts): HTMLElement {
 async function invokeClose(id: string): Promise<void> {
   const { invoke } = await import("@tauri-apps/api/core");
   await invoke("fe_close_note_window", { id });
+}
+
+/* ============ 主题与外观面板 ============ */
+
+function openThemePanel(opts: RenderOpts): void {
+  document.querySelector(".theme-panel")?.remove();
+  const s = opts.data.settings;
+  const overrides: ThemeOverrides = { ...(s.theme_overrides || {}) };
+
+  const panel = el("div", { class: "theme-panel" });
+  const backdrop = el("div", { class: "theme-backdrop" });
+
+  // ---- preset 选择 ----
+  const presetRow = el("div", { class: "tp-presets" });
+  const rebuildPresetRow = () => {
+    presetRow.innerHTML = "";
+    for (const p of PRESETS) {
+      const chip = el(
+        "button",
+        {
+          class: `tp-preset${(s.theme_preset || "classic-dark") === p.name ? " active" : ""}`,
+          title: p.label,
+          onclick: async () => {
+            await opts.onSettings({ theme_preset: p.name });
+          },
+        },
+        el("span", { class: "tp-swatch" },
+          el("i", { style: `background:${p.swatch.bg}` }),
+          el("i", { style: `background:${p.swatch.card}` }),
+          el("i", { style: `background:${p.swatch.accent}` }),
+          el("i", { style: `background:${p.swatch.text}` }),
+        ),
+        el("span", { class: "tp-name" }, p.label),
+      );
+      presetRow.append(chip);
+    }
+  };
+  rebuildPresetRow();
+
+  // ---- 变量自定义 ----
+  const varsGrid = el("div", { class: "tp-vars" });
+  const rebuildVars = () => {
+    varsGrid.innerHTML = "";
+    for (const v of THEME_VARS) {
+      const cur = overrides[v.key] ?? "";
+      const row = el("div", { class: "tp-var" });
+      const label = el("label", {}, v.label);
+      label.title = v.key;
+      row.append(label);
+      if (v.kind === "color") {
+        const swatch = el("button", { class: "tp-swatch-btn", title: "点击取色" });
+        const colorInput = document.createElement("input");
+        colorInput.type = "color";
+        colorInput.value = toHexColor(cur || "#888888");
+        colorInput.className = "tp-color-input";
+        swatch.style.background = colorInput.value;
+        colorInput.addEventListener("input", async () => {
+          swatch.style.background = colorInput.value;
+          overrides[v.key] = colorInput.value;
+          previewOverrides();
+        });
+        swatch.append(colorInput);
+        row.append(swatch);
+      } else {
+        const input = document.createElement("input");
+        input.type = "text";
+        input.className = "tp-text-input";
+        input.placeholder = "默认";
+        input.value = cur;
+        input.addEventListener("change", async () => {
+          if (input.value.trim()) overrides[v.key] = input.value.trim();
+          else delete overrides[v.key];
+          previewOverrides();
+        });
+        row.append(input);
+      }
+      const resetOne = el("button", {
+        class: "tp-reset-one",
+        title: "恢复默认",
+        onclick: async () => {
+          delete overrides[v.key];
+          void opts.onSettings({ theme_overrides: { ...overrides } });
+        },
+      }, "↺");
+      row.append(resetOne);
+      varsGrid.append(row);
+    }
+  };
+  rebuildVars();
+
+  // 实时预览：不落盘，只改 document 变量
+  function previewOverrides() {
+    const root = document.documentElement;
+    for (const [k, v] of Object.entries(overrides)) {
+      if (k.startsWith("--") && v) root.style.setProperty(k, v);
+    }
+  }
+
+  // ---- 底部操作 ----
+  const applyBtn = el("button", {
+    class: "tp-btn primary",
+    onclick: async () => {
+      await opts.onSettings({ theme_overrides: { ...overrides } });
+      panel.remove();
+      backdrop.remove();
+    },
+  }, "应用自定义");
+  const resetBtn = el("button", {
+    class: "tp-btn",
+    onclick: async () => {
+      for (const k of Object.keys(overrides)) delete overrides[k];
+      rebuildVars();
+      previewOverrides();
+      await opts.onSettings({ theme_overrides: {} });
+    },
+  }, "全部恢复默认");
+  const exportBtn = el("button", {
+    class: "tp-btn",
+    title: "复制当前主题 JSON（可分享/导入）",
+    onclick: async () => {
+      const json = JSON.stringify({ preset: s.theme_preset, theme: s.theme, overrides: { ...overrides } }, null, 2);
+      try {
+        await navigator.clipboard.writeText(json);
+        window.__dailyflow.toast("主题 JSON 已复制到剪贴板");
+      } catch {
+        window.__dailyflow.toast("复制失败，请手动选择文本", true);
+      }
+    },
+  }, "导出");
+  const importInput = document.createElement("textarea");
+  importInput.className = "tp-import";
+  importInput.placeholder = '粘贴主题 JSON 导入，如 {"preset":"warm-journal","overrides":{"--accent":"#e8965a"}}';
+  const importBtn = el("button", {
+    class: "tp-btn",
+    onclick: async () => {
+      try {
+        const parsed = JSON.parse(importInput.value) as { preset?: string; overrides?: ThemeOverrides };
+        await opts.onSettings({
+          theme_preset: parsed.preset || s.theme_preset,
+          theme_overrides: parsed.overrides || {},
+        });
+        panel.remove();
+        backdrop.remove();
+        window.__dailyflow.toast("主题已导入");
+      } catch {
+        window.__dailyflow.toast("JSON 解析失败", true);
+      }
+    },
+  }, "导入");
+
+  const actions = el("div", { class: "tp-actions" }, resetBtn, exportBtn, importBtn, applyBtn);
+
+  panel.append(
+    el("div", { class: "tp-title" }, "🎨 主题与外观"),
+    el("div", { class: "tp-sub" }, "预设"),
+    presetRow,
+    el("div", { class: "tp-sub" }, "自定义变量（覆盖当前预设）"),
+    varsGrid,
+    importInput,
+    actions,
+  );
+  backdrop.addEventListener("click", () => {
+    panel.remove();
+    backdrop.remove();
+  });
+  document.body.append(backdrop, panel);
+}
+
+function toHexColor(c: string): string {
+  const s = c.trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(s)) return s;
+  // rgba(r,g,b,a) → hex（丢弃 alpha）
+  const m = s.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+  if (m) {
+    const hex = (n: string) => Number(n).toString(16).padStart(2, "0");
+    return `#${hex(m[1])}${hex(m[2])}${hex(m[3])}`;
+  }
+  return "#888888";
 }

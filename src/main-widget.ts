@@ -1,5 +1,6 @@
 // 今日待办悬浮窗：URL ?view=widget
 import { invoke } from "@tauri-apps/api/core";
+import { applyTheme } from "./themes.ts";
 import type { Data, Task } from "./types.ts";
 
 export {};
@@ -52,7 +53,7 @@ function apply(d: Data) {
   const all = [...tasks, ...deadlinesSoon];
   currentData = { tasks: all, done: tasks.filter((t) => t.done).length, total: tasks.length };
   render();
-  document.documentElement.dataset.theme = d.settings.theme === "light" ? "light" : "dark";
+  applyTheme(d.settings.theme_preset || "classic-dark", d.settings.theme === "light", d.settings.theme_overrides || {});
 }
 
 function plusDays(date: string, n: number): string {

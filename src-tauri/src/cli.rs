@@ -170,6 +170,14 @@ fn dispatch(ctx: &Ctx, args: &[String]) -> Result<Value, String> {
             }
         }
 
+        // ---------------- theme ----------------
+        "theme" => {
+            let preset = opt_positional(rest, 0).unwrap_or_default();
+            let light = has_flag(rest, "light");
+            let overrides = flag(rest, "overrides").unwrap_or_default();
+            ctx.theme_set(&preset, light, &overrides)
+        }
+
         // ---------------- aggregates ----------------
         "day" => ctx.day(&opt_positional(rest, 0).unwrap_or_default()),
         "stats" => ctx.stats(&opt_positional(rest, 0).unwrap_or_default()),
@@ -209,6 +217,7 @@ fn help_markdown_value() -> Value {
             "note pin <id> on|off": "置顶便签",
             "widget show|hide": "显示/隐藏今日待办悬浮窗",
             "widget pin on|off": "悬浮窗置顶开关",
+            "theme [preset] [--light] [--overrides JSON]": "设置主题。preset: classic-dark/classic-light/refined-minimal/glassmorphism/warm-journal；--overrides '{\"--accent\":\"#ff9f43\"}' 自定义 CSS 变量",
             "day [date]": "某天总览（任务+完成统计）",
             "stats [date]": "统计",
             "dump": "输出完整数据 (data.json)",

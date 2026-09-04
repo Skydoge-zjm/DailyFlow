@@ -73,10 +73,26 @@ impl Default for Theme {
     }
 }
 
+/// 内置主题 preset 名（frontend 把名字映射为 CSS 变量集合）
+pub const THEME_PRESETS: [&str; 5] = [
+    "classic-dark",   // 原版深色（main 分支默认）
+    "classic-light",  // 原版浅色
+    "refined-minimal", // 精致留白（theme/refined-minimal 分支设计）
+    "glassmorphism",  // 玻璃拟态（theme/glassmorphism 分支设计）
+    "warm-journal",   // 暖色手账（theme/warm-journal 分支设计）
+];
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
     #[serde(default)]
     pub theme: Theme,
+    /// 主题 preset 名，见 THEME_PRESETS；空串 = classic-dark
+    #[serde(default)]
+    pub theme_preset: String,
+    /// 用户对 preset 的覆盖：CSS 变量名 → 值（如 "--accent": "#ff9f43"）。
+    /// 应用顺序：preset 变量 → 用户覆盖 → 组件级 inline style。
+    #[serde(default)]
+    pub theme_overrides: std::collections::BTreeMap<String, String>,
     #[serde(default = "default_sticky_opacity")]
     pub sticky_opacity: f64,
     #[serde(default)]
@@ -100,6 +116,8 @@ impl Default for Settings {
     fn default() -> Self {
         Settings {
             theme: Theme::Dark,
+            theme_preset: String::new(),
+            theme_overrides: std::collections::BTreeMap::new(),
             sticky_opacity: default_sticky_opacity(),
             autostart: false,
             widget_visible: true,

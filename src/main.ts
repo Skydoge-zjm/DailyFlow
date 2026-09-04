@@ -5,7 +5,8 @@ import {
   renderApp,
   el,
 } from "./ui.ts";
-import type { Data, Note } from "./types.ts";
+import { applyTheme } from "./themes.ts";
+import type { Data, Note, Settings } from "./types.ts";
 
 export {};
 
@@ -15,6 +16,7 @@ declare global {
       data: Data;
       selected: string;
       save: (d: Data) => Promise<void>;
+      saveSettings: (patch: Partial<Settings>) => Promise<void>;
       call: (args: string[]) => Promise<{ ok: boolean; data?: unknown; error?: string }>;
       rerender: () => void;
       toast: (msg: string, isErr?: boolean) => void;
@@ -22,12 +24,28 @@ declare global {
   }
 }
 
+const DEFAULT_SETTINGS: Settings = {
+  theme: "dark",
+  theme_preset: "classic-dark",
+  theme_overrides: {},
+  sticky_opacity: 0.92,
+  autostart: false,
+  widget_visible: true,
+  widget_pinned: true,
+  widget_x: 0,
+  widget_y: 0,
+};
+
 // 主窗口逻辑（body[data-view] 缺省为 main）
 const appEl = document.getElementById("app")!;
 
-let data: Data = { version: 1, tasks: [], notes: [], settings: { theme: "dark", sticky_opacity: 0.92, autostart: false } };
+let data: Data = { version: 1, tasks: [], notes: [], settings: { ...DEFAULT_SETTINGS } };
 let selectedDate = todayStr();
 let toastTimer: number | undefined;
+
+function normSettings(s: Partial<Settings> | undefined): Settings {
+  return { ...DEFAULT_SETTINGS, ...(s || {}), theme_overrides: s?.theme_overrides || {} };
+}
 
 function todayStr(): string {
   const d = new Date();
@@ -57,7 +75,14 @@ async function reload(): Promise<void> {
   render();
 }
 
+/** 应用主题：preset CSS + overrides → document；明暗切换 body[data-theme] */
+function applyThemeNow(): void {
+  const s = normSettings(data.settings);
+  applyTheme(s.theme_preset || "classic-dark", s.theme === "light", s.theme_overrides);
+}
+
 function render(): void {
+  applyThemeNow();
   renderApp(appEl, {
     data,
     selectedDate,
@@ -66,9 +91,9 @@ function render(): void {
       render();
     },
     onCall: call,
-    onTheme: async (theme) => {
-      data.settings.theme = theme;
-      await invoke("fe_save", { data: { ...data } });
+    onSettings: async (patch) => {
+      data.settings = normSettings({ ...data.settings, ...patch });
+      await invoke("fe_save", { data: { ...data, settings: data.settings } });
       render();
     },
     onOpenNote: async (note: Note) => {
@@ -83,7 +108,6 @@ function render(): void {
       }
     },
   });
-  document.documentElement.dataset.theme = data.settings.theme === "light" ? "light" : "dark";
 }
 
 // ---------- 事件 ----------
@@ -101,6 +125,11 @@ window.addEventListener("DOMContentLoaded", () => {
     save: async (d: Data) => {
       data = d;
       await invoke("fe_save", { data: { ...d } });
+      render();
+    },
+    saveSettings: async (patch: Partial<Settings>) => {
+      data.settings = normSettings({ ...data.settings, ...patch });
+      await invoke("fe_save", { data: { ...data, settings: data.settings } });
       render();
     },
     call,

@@ -379,6 +379,51 @@ impl Ctx {
         ok(json!({ "widget_x": x, "widget_y": y }))
     }
 
+    // ---------- theme（主题与外观） ----------
+
+    pub fn theme_set(&self, preset: &str, light: bool, overrides_json: &str) -> CmdResult {
+        let mut d = self.load();
+        if !preset.trim().is_empty() {
+            let p = preset.trim().to_lowercase();
+            if crate::model::THEME_PRESETS.contains(&p.as_str()) {
+                d.settings.theme_preset = p;
+            } else {
+                return err(format!(
+                    "无效主题: {} (可选 {})",
+                    preset,
+                    crate::model::THEME_PRESETS.join("/")
+                ));
+            }
+        }
+        // light 参数只在显式传参时使用：overrides_json 以 "light:" / "dark:" 前缀传明暗
+        if !overrides_json.trim().is_empty() {
+            let (mode, json_part) = match overrides_json.split_once(':') {
+                Some((m @ ("light" | "dark"), rest)) => (Some(m), rest),
+                _ => (None, overrides_json),
+            };
+            if let Some("light") = mode {
+                d.settings.theme = crate::model::Theme::Light;
+            }
+            if let Some("dark") = mode {
+                d.settings.theme = crate::model::Theme::Dark;
+            }
+            if !json_part.trim().is_empty() {
+                let parsed: std::collections::BTreeMap<String, String> = serde_json::from_str(json_part)
+                    .map_err(|e| format!("overrides JSON 解析失败: {}（应为 {{\"--accent\":\"#ff9f43\"}} 形式）", e))?;
+                d.settings.theme_overrides = parsed;
+            }
+        }
+        if light {
+            d.settings.theme = crate::model::Theme::Light;
+        }
+        self.save(&d)?;
+        ok(json!({
+            "theme": d.settings.theme,
+            "theme_preset": d.settings.theme_preset,
+            "theme_overrides": d.settings.theme_overrides,
+        }))
+    }
+
     // ---------- aggregates ----------
 
     pub fn day(&self, date: &str) -> CmdResult {

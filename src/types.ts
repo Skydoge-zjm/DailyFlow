@@ -31,13 +31,21 @@ export interface Note {
   updated_at: string;
 }
 
+export interface Settings {
+  theme: string; // dark | light
+  theme_preset: string; // 主题 preset 名，见 themes.ts PRESETS
+  theme_overrides: Record<string, string>; // CSS 变量覆盖
+  sticky_opacity: number;
+  autostart: boolean;
+  widget_visible: boolean;
+  widget_pinned: boolean;
+  widget_x: number;
+  widget_y: number;
+}
+
 export interface Data {
   version: number;
   tasks: Task[];
   notes: Note[];
-  settings: {
-    theme: string;
-    sticky_opacity: number;
-    autostart: boolean;
-  };
+  settings: Settings;
 }
