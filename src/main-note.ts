@@ -26,9 +26,12 @@ if (noteId) {
     const { listen } = window.__TAURI__.event;
     listen("data-changed", (evt: { payload: { notes?: NoteData[] } }) => {
       const n = evt.payload?.notes?.find((x) => x.id === noteId);
+      // 焦点在标题或正文时不覆盖对应字段，避免打断/丢失正在输入的内容
       if (n && document.activeElement !== bodyEl) {
-        titleEl.value = n.title;
         bodyEl.value = n.body;
+      }
+      if (n && document.activeElement !== titleEl) {
+        titleEl.value = n.title;
       }
       if (n) {
         wrap.classList.toggle("pinned", n.pinned);

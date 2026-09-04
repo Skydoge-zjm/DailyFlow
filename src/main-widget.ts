@@ -51,6 +51,7 @@ function apply(d: Data) {
     .filter((t) => t.kind === "deadline" && !t.done && t.date > today && t.date <= plusDays(today, 3))
     .sort((a, b) => a.date.localeCompare(b.date));
   const all = [...tasks, ...deadlinesSoon];
+  // 进度只按今日任务统计（未来截止任务计入列表但不压低今日完成度）
   currentData = { tasks: all, done: tasks.filter((t) => t.done).length, total: tasks.length };
   render();
   applyTheme(d.settings.theme_preset || "classic-dark", d.settings.theme === "light", d.settings.theme_overrides || {});

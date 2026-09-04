@@ -533,6 +533,9 @@ fn parse_tags(s: &str) -> Vec<String> {
 
 fn normalize_color(c: &str) -> Result<String, String> {
     let s = c.trim().to_lowercase();
+    if s.is_empty() {
+        return Ok("yellow".to_string()); // 缺省黄色便签（note add 不带 --color、托盘新建都走这里）
+    }
     if NOTE_COLORS.contains(&s.as_str()) {
         Ok(s)
     } else {

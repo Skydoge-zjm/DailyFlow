@@ -76,6 +76,7 @@ fn run_gui() {
             commands::fe_note_window,
             commands::fe_close_note_window,
             commands::fe_note_drag,
+            commands::fe_note_pin_window,
             commands::fe_set_note_pos,
             commands::fe_theme,
             commands::fe_show_main,

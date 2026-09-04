@@ -133,6 +133,15 @@ pub fn fe_widget_pin(app: AppHandle, pinned: bool) -> Result<(), String> {
     Ok(())
 }
 
+/// 便签窗口置顶切换（窗口的 always_on_top + 数据的 pinned 字段）
+#[tauri::command]
+pub fn fe_note_pin_window(app: AppHandle, id: String, pin: bool) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window(&crate::windows::note_label(&id)) {
+        let _ = w.set_always_on_top(pin);
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn fe_widget_close(app: AppHandle) -> Result<(), String> {
     let c = Ctx {

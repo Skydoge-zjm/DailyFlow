@@ -488,6 +488,13 @@ function openThemePanel(opts: RenderOpts): void {
       if (k.startsWith("--") && v) root.style.setProperty(k, v);
     }
   }
+  // 关闭面板且未应用时，撤销预览残留（重新按已保存设置应用一遍）
+  function cancelPreview() {
+    panel.remove();
+    backdrop.remove();
+    // 已保存的 overrides 之外的预览值要清掉：直接全量重放当前持久化设置
+    void opts.onSettings({ theme_overrides: { ...(s.theme_overrides || {}) } });
+  }
 
   // ---- 底部操作 ----
   const applyBtn = el("button", {
@@ -552,10 +559,7 @@ function openThemePanel(opts: RenderOpts): void {
     importInput,
     actions,
   );
-  backdrop.addEventListener("click", () => {
-    panel.remove();
-    backdrop.remove();
-  });
+  backdrop.addEventListener("click", cancelPreview);
   document.body.append(backdrop, panel);
 }
 
