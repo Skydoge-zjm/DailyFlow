@@ -458,3 +458,13 @@ body[data-view="widget"] { overflow: hidden; background: transparent; }
   border-radius: 3px; opacity: 0.55;
 }
 .note-resize:hover { opacity: 1; }
+
+/* 周历头部导航 */
+.week-cal-head { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
+.week-cal-head h3 { flex: 1; margin-bottom: 0; }
+.week-nav {
+  width: 22px; height: 22px; border-radius: 7px; font-size: 14px;
+  color: var(--text-faint); display: inline-flex; align-items: center; justify-content: center;
+  transition: all 0.13s;
+}
+.week-nav:hover { background: var(--card-hover); color: var(--accent); }

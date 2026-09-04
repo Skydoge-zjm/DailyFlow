@@ -358,7 +358,34 @@ function weekCal(data: Data, selected: string, today: string, opts: RenderOpts):
     );
     grid.append(cell);
   }
-  return el("div", { class: "week-cal" }, el("h3", {}, "本周"), grid);
+  // 选中日的月分标题（跨月导航时给用户方位感）
+  const selMonth = `${base.getFullYear() % 100}年${base.getMonth() + 1}月`;
+  return el(
+    "div",
+    { class: "week-cal" },
+    el("div", { class: "week-cal-head" },
+      el("h3", {}, selMonth),
+      el("button", {
+        class: "week-nav",
+        title: "上一周（含更早日期）",
+        onclick: () => {
+          const d = new Date(selected + "T00:00:00");
+          d.setDate(d.getDate() - 7);
+          opts.onSelectDate(fmtDate(d));
+        },
+      }, "‹"),
+      el("button", {
+        class: "week-nav",
+        title: "下一周",
+        onclick: () => {
+          const d = new Date(selected + "T00:00:00");
+          d.setDate(d.getDate() + 7);
+          opts.onSelectDate(fmtDate(d));
+        },
+      }, "›"),
+    ),
+    grid,
+  );
 }
 
 // 快速添加表单的跨重渲染状态（renderApp 会全量重建 DOM，
