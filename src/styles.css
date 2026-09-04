@@ -434,3 +434,9 @@ body[data-view="widget"] { overflow: hidden; background: transparent; }
 /* ============ 空状态 & 微调 ============ */
 .empty-title { font-size: 14px; font-weight: 600; color: var(--text-dim); margin-top: 4px; }
 .empty-hint { font-size: 11px; margin-top: 7px; opacity: 0.8; letter-spacing: 0.2px; }
+
+/* ============ 逾期分组 ============ */
+.overdue-label { color: var(--red); }
+.overdue-label::after { background: linear-gradient(90deg, rgba(255,107,107,0.35), transparent) !important; }
+.overdue-group .task-item { background: color-mix(in srgb, var(--red) 6%, var(--bg)); }
+.overdue-group .task-item:hover { background: var(--card-hover); }

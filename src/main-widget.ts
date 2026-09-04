@@ -147,11 +147,20 @@ function build() {
   async function quickAdd() {
     const raw = addInput.value.trim();
     if (!raw) return;
-    // 简易解析 "9:30 开会" / "930 开会" / "下午3 体检"
-    const m = raw.match(/^(\d{1,2}(?::?\d{2})?|上午\d{1,2}|下午\d{1,2}|晚上\d{1,2})\s+(.+)$/);
+    // 归一化中文时间词：9点半→9:30 / 9点→9: / 9点25→9:25
+    const norm = raw
+      .replace(/点半/, ":30")
+      .replace(/点一刻/, ":15")
+      .replace(/点/, ":");
+    // 简易解析 "9:30 开会" / "930 开会" / "下午3 体检" / "9点半 开会"
+    const m = norm.match(/^(上午|下午|晚上)?(\d{1,2}(?::?\d{2})?)\s+(.+)$/);
     let args: string[];
     if (m) {
-      args = ["task", "add", m[2], "--start", m[1]];
+      const prefix = m[1] ?? "";
+      let time = prefix ? `${prefix}${m[2]}` : m[2];
+      // 后端 parse_time 接受 下午3 / 930 / 9:30 形式；纯 "9:" 形式补 0 分
+      if (time.endsWith(":")) time += "00";
+      args = ["task", "add", m[3], "--start", time];
     } else {
       args = ["task", "add", raw];
     }

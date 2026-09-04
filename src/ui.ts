@@ -87,6 +87,21 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
 
   const listEl = el("div", { class: "task-list" });
   let any = false;
+
+  // 逾期任务（所有日期早于今天、未完成、非 goal）单独成组置顶
+  const overdueTasks = data.tasks
+    .filter((t) => !t.done && t.kind !== "goal" && t.date !== "" && t.date < today)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  if (overdueTasks.length && selectedDate === today) {
+    any = true;
+    listEl.append(
+      el("div", { class: "time-group overdue-group" },
+        el("div", { class: "time-group-label overdue-label" }, `⚠ 已逾期（${overdueTasks.length}）`),
+        ...overdueTasks.map((t) => taskItem(t, opts)),
+      ),
+    );
+  }
+
   for (const [label, items] of groups) {
     if (!items.length) continue;
     any = true;
@@ -125,7 +140,7 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
     );
   }
 
-  if (!any) {
+  if (!any && !overdueTasks.length) {
     listEl.append(
       el("div", { class: "empty-state" },
         el("div", { class: "big" }, "🌤"),
