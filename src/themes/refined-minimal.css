@@ -394,3 +394,30 @@ body[data-view="widget"] { overflow: hidden; background: transparent; }
 /* 动画：更轻、更快退场 */
 @keyframes fade-slide-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 .task-item { animation: fade-slide-in 0.2s cubic-bezier(0.22, 1, 0.36, 1); }
+
+/* ===== 深度轮新增组件（refined-minimal） ===== */
+.stat-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(86px, 1fr)); gap: 10px; margin-bottom: 18px; }
+.stat-card { background: var(--card); border: 1px solid var(--border-soft); border-radius: 14px; padding: 11px 13px 10px; box-shadow: var(--shadow-soft); transition: transform 0.16s; }
+.stat-card:hover { transform: translateY(-1.5px); }
+.stat-value { font-size: 21px; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.stat-label { font-size: 10.5px; color: var(--text-faint); margin-top: 3px; letter-spacing: 1px; text-transform: uppercase; }
+.stat-card.hot .stat-value { color: var(--accent); }
+.stat-card.danger .stat-value { color: var(--red); }
+.stat-card.warn .stat-value { color: var(--red); opacity: 0.8; }
+.stat-card.goal .stat-value { color: var(--green); }
+.stat-card.calm .stat-value { color: var(--text-dim); }
+.overdue-label { color: var(--red); }
+.overdue-group .task-item { background: var(--card); }
+.task-inline-input { font-size: 14px; padding: 5px 10px; border-radius: 9px; background: var(--bg-soft); border: 1.5px solid var(--accent); outline: none; width: 100%; color: var(--text); font-family: inherit; }
+.toast-undo { margin-left: 12px; padding: 3px 12px; border-radius: 7px; background: var(--accent); color: var(--bg); font-size: 12px; font-weight: 650; }
+.week-cal-head { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
+.week-cal-head h3 { flex: 1; margin-bottom: 0; }
+.week-nav { width: 22px; height: 22px; border-radius: 7px; font-size: 14px; color: var(--text-faint); display: inline-flex; align-items: center; justify-content: center; }
+.week-nav:hover { background: var(--card-hover); color: var(--accent); }
+.empty-title { font-size: 14px; font-weight: 600; color: var(--text-dim); margin-top: 4px; }
+.empty-hint { font-size: 11px; margin-top: 7px; }
+.note-dot { width: 12px; height: 12px; border-radius: 4px; flex-shrink: 0; margin-top: 3px; border: 1px solid var(--border-soft); }
+.note-resize { position: fixed; right: 2px; bottom: 2px; width: 15px; height: 15px; cursor: nwse-resize; z-index: 10; background: linear-gradient(135deg, transparent 50%, var(--text-faint) 50%); opacity: 0.3; }
+.note-resize:hover { opacity: 0.8; }
+.ring-fg.done-all { stroke: var(--green); }
+.ring-label.done-all { color: var(--green); }
