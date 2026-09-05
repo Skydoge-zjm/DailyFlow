@@ -190,6 +190,18 @@ fn default_note_h() -> f64 {
 
 pub const NOTE_COLORS: [&str; 6] = ["yellow", "green", "blue", "pink", "purple", "dark"];
 
+/// 撤销快照：记录最近一次改动前的任务/便签状态（单级撤销）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UndoEntry {
+    pub ts: String,
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub tasks: Vec<Task>,
+    #[serde(default)]
+    pub notes: Vec<Note>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Data {
     #[serde(default = "default_version")]
@@ -200,6 +212,9 @@ pub struct Data {
     pub notes: Vec<Note>,
     #[serde(default)]
     pub settings: Settings,
+    /// 最近一次可撤销操作的前置快照（None = 无可撤销）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub undo: Option<UndoEntry>,
 }
 
 fn default_version() -> u32 {
@@ -213,6 +228,7 @@ impl Default for Data {
             tasks: Vec::new(),
             notes: Vec::new(),
             settings: Settings::default(),
+            undo: None,
         }
     }
 }

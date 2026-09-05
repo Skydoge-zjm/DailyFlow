@@ -116,3 +116,38 @@ pub fn weekday_cn(d: NaiveDate) -> &'static str {
         chrono::Weekday::Sun => "周日",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_date_relative() {
+        let today = Local::now().date_naive();
+        assert_eq!(parse_date("today").unwrap(), today);
+        assert_eq!(parse_date("tomorrow").unwrap(), today + Duration::days(1));
+        assert_eq!(parse_date("+3").unwrap(), today + Duration::days(3));
+        assert_eq!(parse_date("-1").unwrap(), today - Duration::days(1));
+    }
+
+    #[test]
+    fn test_parse_date_invalid() {
+        assert!(parse_date("2027-02-29").is_err());
+        assert!(parse_date("not-a-date").is_err());
+    }
+
+    #[test]
+    fn test_parse_time_variants() {
+        assert_eq!(parse_time("9").unwrap(), "09:00");
+        assert_eq!(parse_time("930").unwrap(), "09:30");
+        assert_eq!(parse_time("9:30").unwrap(), "09:30");
+        assert_eq!(parse_time("下午3").unwrap(), "15:00");
+    }
+
+    #[test]
+    fn test_parse_time_noon_pm() {
+        assert_eq!(parse_time("下午12点").unwrap(), "12:00");
+        assert_eq!(parse_time("12点30").unwrap(), "12:30");
+        assert!(parse_time("25点").is_err());
+    }
+}

@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 
-use crate::model::{Data, Note, Priority, Task, NOTE_COLORS};
+use crate::model::{Data, Note, Priority, Task, UndoEntry, NOTE_COLORS};
 use crate::store::Store;
 use crate::timeparse::{now_iso, parse_date, parse_time, today_str, weekday_cn};
 
@@ -27,6 +27,16 @@ impl Ctx {
             .save(d)
             .map_err(|e| format!("保存失败: {}", e))?;
         Ok(json!({}))
+    }
+
+    /// 保存撤销快照：记录操作前 tasks/notes 全量（settings/undo 不含）
+    fn snapshot_undo(&self, d: &Data, label: &str) -> UndoEntry {
+        UndoEntry {
+            ts: now_iso(),
+            label: label.to_string(),
+            tasks: d.tasks.clone(),
+            notes: d.notes.clone(),
+        }
     }
 
     // ---------- tasks ----------
@@ -58,6 +68,9 @@ impl Ctx {
         };
         let start_s = parse_time(start)?;
         let end_s = parse_time(end)?;
+        if !start_s.is_empty() && !end_s.is_empty() && end_s < start_s {
+            return err(format!("结束时间 ({}) 不能早于开始时间 ({})", end_s, start_s));
+        }
         let priority_v = parse_priority(priority)?;
         let tags_v = parse_tags(tags);
         let notes_s = notes.trim().to_string();
@@ -178,6 +191,15 @@ impl Ctx {
                 let s = parse_time(v)?;
                 t.end = if s.is_empty() { None } else { Some(s) };
             }
+            // 校验编辑后的时间区间（start 与 end 都存在时）
+            if let (Some(s), Some(e)) = (&t.start, &t.end) {
+                if e < s {
+                    return err(format!(
+                        "结束时间 ({}) 不能早于开始时间 ({})",
+                        e, s
+                    ));
+                }
+            }
             if let Some(v) = priority {
                 if !v.trim().is_empty() {
                     t.priority = parse_priority(v)?;
@@ -226,11 +248,14 @@ impl Ctx {
 
     pub fn task_delete(&self, id: &str) -> CmdResult {
         let mut d = self.load();
+        // 快照必须在删除前拍摄，否则 undo 恢复的是"删除后"的状态
+        let snapshot = self.snapshot_undo(&d, "删除任务");
         let before = d.tasks.len();
         d.tasks.retain(|t| t.id != id);
         if d.tasks.len() == before {
             return err(format!("任务不存在: {}", id));
         }
+        d.undo = Some(snapshot);
         self.save(&d)?;
         ok(json!({ "deleted": id }))
     }
@@ -328,13 +353,30 @@ impl Ctx {
 
     pub fn note_delete(&self, id: &str) -> CmdResult {
         let mut d = self.load();
+        // 快照必须在删除前拍摄
+        let snapshot = self.snapshot_undo(&d, "删除便签");
         let before = d.notes.len();
         d.notes.retain(|n| n.id != id);
         if d.notes.len() == before {
             return err(format!("便签不存在: {}", id));
         }
+        d.undo = Some(snapshot);
         self.save(&d)?;
         ok(json!({ "deleted": id }))
+    }
+
+    /// 撤销最近一次可撤销操作（删除任务/便签），恢复删除前的任务/便签集合。
+    /// 单级撤销：执行后 undo 记录清空，连用两次第二次会报"没有可撤销的操作"。
+    pub fn undo(&self) -> CmdResult {
+        let mut d = self.load();
+        let u = match d.undo.take() {
+            Some(u) => u,
+            None => return err("没有可撤销的操作".into()),
+        };
+        d.tasks = u.tasks;
+        d.notes = u.notes;
+        self.save(&d)?;
+        ok(json!({ "undone": u.label, "ts": u.ts }))
     }
 
     pub fn note_show(&self, id: &str, show: bool) -> CmdResult {
@@ -533,9 +575,10 @@ fn parse_priority(s: &str) -> Result<Priority, String> {
 }
 
 fn parse_tags(s: &str) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
     s.split(&[',', '，'][..])
         .map(|x| x.trim().trim_start_matches('#').to_string())
-        .filter(|x| !x.is_empty())
+        .filter(|x| !x.is_empty() && seen.insert(x.clone()))
         .collect()
 }
 

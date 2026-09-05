@@ -182,6 +182,7 @@ fn dispatch(ctx: &Ctx, args: &[String]) -> Result<Value, String> {
         "day" => ctx.day(&opt_positional(rest, 0).unwrap_or_default()),
         "stats" => ctx.stats(&opt_positional(rest, 0).unwrap_or_default()),
         "dump" => ctx.dump(),
+        "undo" => ctx.undo(),
 
         other => Err(format!(
             "未知命令: {}。运行 dailyflow help 查看全部命令。",
@@ -221,6 +222,7 @@ fn help_markdown_value() -> Value {
             "day [date]": "某天总览（任务+完成统计）",
             "stats [date]": "统计",
             "dump": "输出完整数据 (data.json)",
+            "undo": "撤销最近一次删除操作（恢复被删除的任务/便签）",
             "help": "本帮助",
             "version": "版本"
         },
