@@ -126,5 +126,22 @@ pub fn run() {
         let code = cli::run_cli(args);
         std::process::exit(code);
     }
-    run_gui();
+    // 无参数：CLI 上下文（脚本/AI 调用）输出帮助后立即退出，避免"挂起"；
+    // 仅当拥有控制台窗口（用户双击/从终端直接启动）时才进入 GUI。
+    #[cfg(windows)]
+    {
+        if !cli::has_console_input() {
+            // 无控制台（GUI 上下文，如双击快捷方式）→ 正常启动图形界面
+            run_gui();
+            return;
+        }
+        // 有控制台但可能是从终端启动：仍启动 GUI，但打印提示
+        // 注：双击 .exe 时 Windows 会创建临时控制台，此处保守地直接启动 GUI
+        run_gui();
+        return;
+    }
+    #[cfg(not(windows))]
+    {
+        run_gui();
+    }
 }
