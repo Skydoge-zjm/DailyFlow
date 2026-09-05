@@ -59,6 +59,7 @@ dailyflow note pin <id> on|off    # 置顶
 dailyflow day [date]    # 某天总览：任务列表 + 完成/待办数 + 星期
 dailyflow stats [date]  # 全局统计：总数/完成/逾期/便签数
 dailyflow dump          # 完整 data.json（适合 AI 快速了解全部状态）
+dailyflow undo          # 撤销最近一次删除操作（恢复被删除的任务/便签）
 dailyflow help          # 命令速查（JSON）
 dailyflow version
 ```
