@@ -37,7 +37,16 @@ function fmtDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+function openCountText(tasks: Task[]): string {
+  const scheduled = tasks.filter((t) => t.kind !== "goal");
+  const open = scheduled.filter((t) => !t.done).length;
+  if (!scheduled.length) return "还没有安排，先从右侧捕捉一项计划";
+  return open ? `${scheduled.length} 项计划 · ${open} 项待完成` : `${scheduled.length} 项计划 · 全部完成`;
+}
+
 export function renderApp(root: HTMLElement, opts: RenderOpts): void {
+  document.body.classList.add("modern-ui");
+  root.classList.add("modern-app");
   root.innerHTML = "";
   const { data, selectedDate } = opts;
   const today = fmtDate(new Date());
@@ -48,24 +57,52 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
   const progress = dayProgress(data, selectedDate);
   const ring = buildRing(progress, dayCount > 0 && progress >= 1);
 
+  const doneCount = data.tasks.filter((t) => t.date === selectedDate && t.kind !== "goal" && t.done).length;
   const topbar = el(
-    "div",
+    "header",
     { class: "topbar" },
+    el("div", { class: "brand-lockup" },
+      el("div", { class: "brand-mark", "aria-hidden": "true" }, "df"),
+      el("div", { class: "brand-copy" },
+        el("div", { class: "brand-name" }, "DAILYFLOW"),
+        el("div", { class: "brand-caption" }, "个人节奏工作台"),
+      ),
+    ),
+    el("div", { class: "topbar-divider", "aria-hidden": "true" }),
     el(
       "div",
       { class: "date-block" },
+      el("div", { class: "date-kicker" }, today === selectedDate ? "FOCUS DAY" : "SELECTED DAY"),
       el("div", { class: "date-main" }, `${sel.getMonth() + 1}月${sel.getDate()}日`),
       el("div", { class: "date-sub" }, `${WD[sel.getDay()]} · ${today === selectedDate ? "今天" : selectedDate}`),
     ),
-    ring,
+    el("div", { class: "progress-cluster" },
+      ring,
+      el("div", { class: "progress-copy" },
+        el("span", { class: "progress-label" }, "今日进度"),
+        el("strong", {}, `${doneCount} / ${dayCount || 0} 项完成`),
+      ),
+    ),
     el("div", { class: "spacer" }),
-    el("button", { class: "icon-btn", title: "新建便签", onclick: () => opts.onNewNote() }, "🗒"),
-    el("button", {
-      class: "icon-btn",
-      title: "明暗切换",
-      onclick: () => void opts.onSettings({ theme: data.settings.theme === "dark" ? "light" : "dark" }),
-    }, data.settings.theme === "dark" ? "☀️" : "🌙"),
-    el("button", { class: "icon-btn", title: "主题与外观", onclick: () => openThemePanel(opts) }, "🎨"),
+    el("div", { class: "topbar-actions" },
+      el("button", { class: "icon-btn action-btn", title: "新建便签", "aria-label": "新建便签", onclick: () => opts.onNewNote() },
+        el("span", { class: "btn-glyph", "aria-hidden": "true" }, "+"),
+        el("span", { class: "btn-label" }, "便签"),
+      ),
+      el("button", {
+        class: "icon-btn action-btn",
+        title: "明暗切换",
+        "aria-label": "切换明暗主题",
+        onclick: () => void opts.onSettings({ theme: data.settings.theme === "dark" ? "light" : "dark" }),
+      },
+        el("span", { class: "btn-glyph", "aria-hidden": "true" }, data.settings.theme === "dark" ? "☼" : "◐"),
+        el("span", { class: "btn-label" }, data.settings.theme === "dark" ? "浅色" : "深色"),
+      ),
+      el("button", { class: "icon-btn action-btn", title: "主题与外观", "aria-label": "主题与外观", onclick: () => openThemePanel(opts) },
+        el("span", { class: "btn-glyph", "aria-hidden": "true" }, "✦"),
+        el("span", { class: "btn-label" }, "外观"),
+      ),
+    ),
   );
 
   // ===== 左列：任务 =====
@@ -79,7 +116,7 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
     ["晚上", []],
     ["全天 / 待办", []],
   ];
-  for (const t of dayTasks) {
+  for (const t of dayTasks.filter((t) => t.kind !== "deadline")) {
     if (!t.start) groups[3][1].push(t);
     else if (t.start < "12:00") groups[0][1].push(t);
     else if (t.start < "18:00") groups[1][1].push(t);
@@ -97,7 +134,7 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
     any = true;
     listEl.append(
       el("div", { class: "time-group overdue-group" },
-        el("div", { class: "time-group-label overdue-label" }, `⚠ 已逾期（${overdueTasks.length}）`),
+        el("div", { class: "time-group-label overdue-label" }, `已逾期 · ${overdueTasks.length}`),
         ...overdueTasks.map((t) => taskItem(t, opts)),
       ),
     );
@@ -123,7 +160,7 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
     any = true;
     listEl.append(
       el("div", { class: "time-group" },
-        el("div", { class: "time-group-label" }, "⏳ 截止任务"),
+        el("div", { class: "time-group-label" }, "截止任务"),
         ...deadlines.map((t) => taskItem(t, opts)),
       ),
     );
@@ -135,7 +172,7 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
     any = true;
     listEl.append(
       el("div", { class: "time-group" },
-        el("div", { class: "time-group-label" }, "🌱 长期目标"),
+        el("div", { class: "time-group-label" }, "长期目标"),
         ...goals.map((t) => taskItem(t, opts)),
       ),
     );
@@ -144,7 +181,7 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
   if (!any && !overdueTasks.length) {
     listEl.append(
       el("div", { class: "empty-state" },
-        el("div", { class: "big" }, "🌤"),
+        el("div", { class: "big" }, "—"),
         el("div", { class: "empty-title" }, "这一天还没有安排"),
         el("div", { class: "empty-hint" }, "双击标题可改任务 · 右侧快速添加 · 或让 AI 通过 CLI 帮你安排"),
       ),
@@ -155,6 +192,14 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
   const tasksCol = el(
     "div",
     { class: "tasks-col" },
+    el("div", { class: "workspace-intro" },
+      el("div", { class: "section-kicker" }, "WORKSPACE / TODAY"),
+      el("div", { class: "workspace-title-row" },
+        el("h1", { class: "workspace-title" }, today === selectedDate ? "今天的节奏" : "这一天的安排"),
+        el("span", { class: "workspace-date" }, selectedDate.slice(5).replace("-", " / ")),
+      ),
+      el("p", { class: "workspace-subtitle" }, openCountText(dayTasks)),
+    ),
     statCards(data, today),
     el("div", { class: "section-head" },
       el("h2", {}, "日程与待办"),
@@ -179,12 +224,13 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
 
   // ===== 底栏 =====
   const statusbar = el(
-    "div",
+    "footer",
     { class: "statusbar" },
-    el("span", {}, "数据:"),
+    el("span", { class: "status-indicator", "aria-hidden": "true" }),
+    el("span", { class: "status-label" }, "已同步"),
     el("span", { class: "mono" }, "%APPDATA%\\com.dailyflow.app\\data.json"),
     el("div", { class: "spacer" }),
-    el("span", {}, `共 ${data.tasks.length} 项 · 便签 ${data.notes.length} 张`),
+    el("span", { class: "status-count" }, `共 ${data.tasks.length} 项 · 便签 ${data.notes.length} 张`),
   );
 
   root.append(topbar, el("div", { class: "layout" }, tasksCol, sideCol), statusbar);
@@ -197,23 +243,29 @@ function statCards(data: Data, today: string): HTMLElement {
   const overdueN = data.tasks.filter((t) => !t.done && t.kind !== "goal" && t.date !== "" && t.date < today).length;
   const goalsN = data.tasks.filter((t) => t.kind === "goal" && !t.done).length;
   const deadlinesN = data.tasks.filter((t) => t.kind === "deadline" && !t.done && t.date !== "" && t.date >= today).length;
-  const card = (label: string, value: string, cls: string) =>
+  const card = (label: string, value: string, cls: string, index: string) =>
     el("div", { class: `stat-card ${cls}` },
-      el("div", { class: "stat-value" }, value),
+      el("div", { class: "stat-topline" },
+        el("span", { class: "stat-index" }, index),
+        el("span", { class: "stat-value" }, value),
+      ),
       el("div", { class: "stat-label" }, label),
     );
+  const cards: Array<[string, string, string]> = [
+    ["今日待办", String(todayOpen), todayOpen > 0 ? "hot" : "calm"],
+    ...(overdueN > 0 ? [["已逾期", String(overdueN), "danger"] as [string, string, string]] : []),
+    ...(deadlinesN > 0 ? [["临近截止", String(deadlinesN), "warn"] as [string, string, string]] : []),
+    ["长期目标", String(goalsN), "goal"],
+  ];
   return el(
     "div",
     { class: "stat-cards" },
-    card("今日待办", String(todayOpen), todayOpen > 0 ? "hot" : "calm"),
-    overdueN > 0 ? card("已逾期", String(overdueN), "danger") : null,
-    deadlinesN > 0 ? card("临近截止", String(deadlinesN), "warn") : null,
-    card("长期目标", String(goalsN), "goal"),
+    ...cards.map(([label, value, cls], index) => card(label, value, cls, String(index + 1).padStart(2, "0"))),
   );
 }
 
 function dayProgress(data: Data, date: string): number {
-  const ts = data.tasks.filter((t) => t.date === date);
+  const ts = data.tasks.filter((t) => t.date === date && t.kind !== "goal");
   if (!ts.length) return 0;
   return ts.filter((t) => t.done).length / ts.length;
 }
@@ -259,18 +311,18 @@ function taskItem(t: Task, opts: RenderOpts): HTMLElement {
   const today = fmtDate(new Date());
   const overdue = !t.done && t.date !== "" && t.date < today && t.kind !== "goal";
   const meta: (Node | string | null)[] = [];
-  if (t.start) meta.push(el("span", { class: "time-chip" }, `🕐 ${t.start}${t.end ? "–" + t.end : ""}`));
+  if (t.start) meta.push(el("span", { class: "time-chip" }, `◷ ${t.start}${t.end ? "–" + t.end : ""}`));
   if (overdue) meta.push(el("span", { class: "overdue" }, "已逾期"));
   if (t.kind === "deadline" && t.date) {
     const n = daysUntil(t.date);
     const label = n === 0 ? "今天截止" : n === 1 ? "明天截止" : `剩 ${n} 天`;
-    meta.push(el("span", { class: n <= 1 ? "overdue" : "kind-chip" }, `⏳ ${label}`));
+    meta.push(el("span", { class: n <= 1 ? "overdue" : "kind-chip" }, `↘ ${label}`));
   }
   if (t.kind === "goal") {
-    if (t.date) meta.push(el("span", { class: "kind-chip goal-chip" }, `🎯 目标日 ${t.date.slice(5)}`));
-    else meta.push(el("span", { class: "kind-chip goal-chip" }, "🌱 长期"));
+    if (t.date) meta.push(el("span", { class: "kind-chip goal-chip" }, `◎ 目标日 ${t.date.slice(5)}`));
+    else meta.push(el("span", { class: "kind-chip goal-chip" }, "◎ 长期"));
   }
-  meta.push(...t.tags.map((tag) => el("span", { class: "tag-chip" }, `#${tag}`)));
+  meta.push(...t.tags.map((tag) => el("span", { class: "tag-chip" }, tag)));
 
   const titleEl = el("div", { class: "task-title" }, t.title);
   const item = el(
@@ -387,9 +439,13 @@ function weekCal(data: Data, selected: string, today: string, opts: RenderOpts):
     "div",
     { class: "week-cal" },
     el("div", { class: "week-cal-head" },
-      el("h3", {}, selMonth),
+      el("div", { class: "panel-heading" },
+        el("div", { class: "panel-eyebrow" }, "WEEK VIEW"),
+        el("h3", {}, selMonth),
+      ),
       el("button", {
         class: "week-nav",
+        "aria-label": "上一周",
         title: "上一周（含更早日期）",
         onclick: () => {
           const d = new Date(selected + "T00:00:00");
@@ -399,6 +455,7 @@ function weekCal(data: Data, selected: string, today: string, opts: RenderOpts):
       }, "‹"),
       el("button", {
         class: "week-nav",
+        "aria-label": "下一周",
         title: "下一周",
         onclick: () => {
           const d = new Date(selected + "T00:00:00");
@@ -417,8 +474,8 @@ function weekCal(data: Data, selected: string, today: string, opts: RenderOpts):
 let qaState = { title: "", time: "", kind: "normal", pri: "" };
 
 function quickAdd(opts: RenderOpts, selectedDate: string): HTMLElement {
-  const title = el("input", { placeholder: "要做什么？" });
-  const time = el("input", { placeholder: "时间(可空, 如 9:30)", style: "max-width:130px" });
+  const title = el("input", { placeholder: "捕捉一项计划…", "aria-label": "任务标题" });
+  const time = el("input", { placeholder: "时间 / 目标日", "aria-label": "时间或目标日期" });
   const pri = document.createElement("select");
   for (const [v, label] of [["", "普通"], ["high", "高"], ["low", "低"]] as const) {
     const o = document.createElement("option");
@@ -446,17 +503,20 @@ function quickAdd(opts: RenderOpts, selectedDate: string): HTMLElement {
   time.addEventListener("input", () => (qaState.time = time.value));
   kind.addEventListener("change", () => (qaState.kind = kind.value));
   pri.addEventListener("change", () => (qaState.pri = pri.value));
-  const submitBtn = el("button", { class: "qa-submit", type: "submit" }, "＋ 添加到 " + selectedDate.slice(5));
+  const submitBtn = el("button", { class: "qa-submit", type: "submit" },
+    el("span", { class: "qa-submit-glyph", "aria-hidden": "true" }, "+"),
+    el("span", { class: "qa-submit-label" }, "添加到 " + selectedDate.slice(5)),
+  );
   const syncKindUi = () => {
     if (kind.value === "goal") {
-      time.placeholder = "目标日期(可空, 如 2026-12-31)";
-      submitBtn.textContent = "＋ 新长期目标";
+      time.placeholder = "目标日期（可空，如 2026-12-31）";
+      submitBtn.querySelector(".qa-submit-label")!.textContent = "新长期目标";
     } else if (kind.value === "deadline") {
-      time.placeholder = "时间(可空, 如 9:30)";
-      submitBtn.textContent = "＋ 截止于 " + selectedDate.slice(5);
+      time.placeholder = "时间（可空，如 9:30）";
+      submitBtn.querySelector(".qa-submit-label")!.textContent = "截止于 " + selectedDate.slice(5);
     } else {
-      time.placeholder = "时间(可空, 如 9:30)";
-      submitBtn.textContent = "＋ 添加到 " + selectedDate.slice(5);
+      time.placeholder = "时间（可空，如 9:30）";
+      submitBtn.querySelector(".qa-submit-label")!.textContent = "添加到 " + selectedDate.slice(5);
     }
   };
   kind.addEventListener("change", syncKindUi);
@@ -466,7 +526,7 @@ function quickAdd(opts: RenderOpts, selectedDate: string): HTMLElement {
     el("div", { class: "qa-row" }, time, pri),
     el("div", { class: "qa-row" }, kind),
     submitBtn,
-    el("div", { class: "qa-hint" }, "截止: 日期即 DDL · 长期: 常驻列表 · AI 可直接 ", el("code", {}, "dailyflow task add")),
+    el("div", { class: "qa-hint" }, "截止日会自动进入追踪 · 长期目标会常驻列表"),
   );
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -492,18 +552,24 @@ function quickAdd(opts: RenderOpts, selectedDate: string): HTMLElement {
       window.__dailyflow.rerender();
     }
   });
-  return el("div", { class: "quick-add" }, el("h3", {}, "快速添加"), form);
+  return el("div", { class: "quick-add" },
+    el("div", { class: "panel-heading" },
+      el("div", { class: "panel-eyebrow" }, "CAPTURE"),
+      el("h3", {}, "快速添加"),
+    ),
+    form,
+  );
 }
 
 function notesPanel(data: Data, opts: RenderOpts): HTMLElement {
-  const list = el("div", { style: "display:flex;flex-direction:column;gap:6px" });
+  const list = el("div", { class: "notes-list" });
   const colorDot: Record<string, string> = {
     yellow: "#fff3bf", green: "#d3f9d8", blue: "#d0ebff",
     pink: "#ffdeeb", purple: "#e5dbff", dark: "#25272e",
   };
   for (const n of data.notes) {
     const toggleBtn = el("button", {
-      class: "task-del",
+      class: "note-action",
       title: n.visible ? "隐藏便签窗口" : "显示便签窗口",
       onclick: (e: unknown) => {
         (e as Event).stopPropagation();
@@ -516,8 +582,7 @@ function notesPanel(data: Data, opts: RenderOpts): HTMLElement {
     }, n.visible ? "◉" : "○");
     list.append(
       el("div", {
-        class: "task-item",
-        style: "padding:8px 10px;cursor:pointer",
+        class: "note-row",
         onclick: () => opts.onOpenNote(n),
         title: "点击打开便签窗口",
       },
@@ -531,7 +596,7 @@ function notesPanel(data: Data, opts: RenderOpts): HTMLElement {
         ),
         toggleBtn,
         el("button", {
-          class: "task-del",
+          class: "note-delete",
           title: "删除便签",
           onclick: (e: unknown) => {
             (e as Event).stopPropagation();
@@ -546,9 +611,18 @@ function notesPanel(data: Data, opts: RenderOpts): HTMLElement {
     );
   }
   if (!data.notes.length) {
-    list.append(el("div", { class: "qa-hint" }, "还没有便签。点顶栏 🗗 新建一张桌面便签。"));
+    list.append(el("div", { class: "notes-empty" }, "还没有便签 · 顶栏可新建"));
   }
-  return el("div", { class: "quick-add" }, el("h3", {}, "桌面便签"), list);
+  return el("div", { class: "quick-add notes-panel" },
+    el("div", { class: "panel-heading" },
+      el("div", { class: "panel-eyebrow" }, "MEMOS"),
+      el("div", { class: "panel-title-row" },
+        el("h3", {}, "桌面便签"),
+        el("span", { class: "panel-count" }, String(data.notes.length)),
+      ),
+    ),
+    list,
+  );
 }
 
 async function invokeClose(id: string): Promise<void> {
@@ -607,7 +681,8 @@ function openThemePanel(opts: RenderOpts): void {
         const swatch = el("button", { class: "tp-swatch-btn", title: "点击取色" });
         const colorInput = document.createElement("input");
         colorInput.type = "color";
-        colorInput.value = toHexColor(cur || "#888888");
+        const computed = getComputedStyle(document.documentElement).getPropertyValue(v.key).trim();
+        colorInput.value = toHexColor(cur || computed || "#888888");
         colorInput.className = "tp-color-input";
         swatch.style.background = colorInput.value;
         colorInput.addEventListener("input", async () => {

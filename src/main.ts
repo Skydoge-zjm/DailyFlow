@@ -6,7 +6,7 @@ import {
   el,
 } from "./ui.ts";
 import { applyTheme } from "./themes.ts";
-import type { Data, Note, Settings } from "./types.ts";
+import type { Data, Note, Settings, Task } from "./types.ts";
 
 export {};
 
@@ -43,6 +43,7 @@ const appEl = document.getElementById("app")!;
 let data: Data = { version: 1, tasks: [], notes: [], settings: { ...DEFAULT_SETTINGS } };
 let selectedDate = todayStr();
 let toastTimer: number | undefined;
+const previewMode = new URLSearchParams(location.search).has("preview");
 
 function normSettings(s: Partial<Settings> | undefined): Settings {
   return { ...DEFAULT_SETTINGS, ...(s || {}), theme_overrides: s?.theme_overrides || {} };
@@ -51,6 +52,26 @@ function normSettings(s: Partial<Settings> | undefined): Settings {
 function todayStr(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function previewData(): Data {
+  const today = todayStr();
+  const tasks: Task[] = [
+    { id: "preview-1", title: "整理本周项目进展", notes: "发给团队的版本", date: today, start: "09:30", end: "10:15", done: false, priority: "high", kind: "normal", tags: ["工作"], created_at: "", completed_at: null },
+    { id: "preview-2", title: "午间散步 20 分钟", notes: "离开屏幕，换个节奏", date: today, start: "12:30", end: null, done: true, priority: "low", kind: "normal", tags: ["生活"], created_at: "", completed_at: today },
+    { id: "preview-3", title: "阅读产品反馈并标注重点", notes: "", date: today, start: "15:00", end: "16:00", done: false, priority: "normal", kind: "normal", tags: ["研究"], created_at: "", completed_at: null },
+    { id: "preview-4", title: "准备周五演示稿", notes: "", date: today, start: null, end: null, done: false, priority: "normal", kind: "deadline", tags: ["重要"], created_at: "", completed_at: null },
+    { id: "preview-5", title: "建立每周复盘习惯", notes: "", date: "", start: null, end: null, done: false, priority: "low", kind: "goal", tags: [], created_at: "", completed_at: null },
+  ];
+  return {
+    version: 1,
+    settings: { ...DEFAULT_SETTINGS },
+    tasks,
+    notes: [
+      { id: "preview-note-1", title: "灵感收集", body: "把值得保留的想法先放在这里。", color: "yellow", x: 0, y: 0, w: 260, h: 220, pinned: false, visible: true, created_at: "", updated_at: "" },
+      { id: "preview-note-2", title: "下次会议", body: "确认发布节奏和体验细节。", color: "blue", x: 0, y: 0, w: 260, h: 220, pinned: true, visible: false, created_at: "", updated_at: "" },
+    ],
+  };
 }
 
 function toast(msg: string, isErr = false) {
@@ -90,7 +111,7 @@ async function call(args: string[]): Promise<{ ok: boolean; data?: unknown; erro
 }
 
 async function reload(): Promise<void> {
-  data = await invoke<Data>("fe_load");
+  data = previewMode ? previewData() : await invoke<Data>("fe_load");
   render();
 }
 
@@ -158,6 +179,8 @@ window.addEventListener("DOMContentLoaded", () => {
   };
 
   reload();
+
+  if (previewMode) return;
 
   // 后端文件监听推送（CLI 修改 data.json 后自动刷新）
   // @ts-expect-error Tauri event API
