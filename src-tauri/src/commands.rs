@@ -38,13 +38,14 @@ pub fn fe_call(app: AppHandle, args: Vec<String>) -> Value {
     let c = Ctx {
         store: Store::new(crate::app_paths()),
     };
+    let before = serde_json::to_value(c.store.load()).unwrap_or(serde_json::json!({}));
     match crate::cli::dispatch_pub(&c, &args) {
         Ok(v) => {
             // 广播完整数据（与 lib.rs 文件监听线程的 payload 结构一致），所有窗口据此刷新
             let d = c.store.load();
             if let Ok(v) = serde_json::to_value(&d) {
                 let _ = app.emit("data-changed", &v);
-                crate::windows::sync_note_windows(&app, &v);
+                crate::windows::sync_note_windows_with_previous(&app, &before, &v);
             }
             v
         }

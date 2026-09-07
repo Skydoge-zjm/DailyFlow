@@ -90,8 +90,31 @@ pub fn open_note_window(app: &AppHandle, id: &str, note: &Value) -> Result<(), S
     Ok(())
 }
 
-/// 根据 data 同步便签与悬浮窗：visible → 显示/创建，不可见 → 隐藏/关闭
+/// 根据 data 同步便签与悬浮窗。
+///
+/// 启动时只清理不该显示的窗口，不会把所有历史 `visible` 便签一次性创建出来。
+/// 新建便签、单独显示便签和托盘“显示全部”会通过显式函数打开窗口。
 pub fn sync_note_windows(app: &AppHandle, data: &Value) {
+    sync_note_windows_inner(app, data, None);
+}
+
+/// 同步外部变更，并只打开从隐藏变为可见的新便签。
+pub fn sync_note_windows_with_previous(app: &AppHandle, previous: &Value, data: &Value) {
+    sync_note_windows_inner(app, data, Some(previous));
+}
+
+/// 用户明确选择“显示全部便签”时使用。
+pub fn open_visible_notes(app: &AppHandle, data: &Value) {
+    let notes = data["notes"].as_array().cloned().unwrap_or_default();
+    for n in notes {
+        if n["visible"].as_bool().unwrap_or(false) {
+            let id = n["id"].as_str().unwrap_or_default();
+            let _ = open_note_window(app, id, &n);
+        }
+    }
+}
+
+fn sync_note_windows_inner(app: &AppHandle, data: &Value, previous: Option<&Value>) {
     let notes = data["notes"].as_array().cloned().unwrap_or_default();
     let want: Vec<(String, Value)> = notes
         .iter()
@@ -112,10 +135,21 @@ pub fn sync_note_windows(app: &AppHandle, data: &Value) {
             }
         }
     }
-    // 打开/显示
-    for (id, n) in want {
-        if n["visible"].as_bool().unwrap_or(true) {
-            let _ = open_note_window(app, &id, &n);
+    // 仅打开本次变更里从隐藏变为可见的便签，避免普通任务更新也弹出全部历史便签。
+    if let Some(previous) = previous {
+        let old_notes = previous["notes"].as_array().cloned().unwrap_or_default();
+        for (id, n) in &want {
+            if !n["visible"].as_bool().unwrap_or(false) {
+                continue;
+            }
+            let was_visible = old_notes
+                .iter()
+                .find(|old| old["id"].as_str() == Some(id.as_str()))
+                .and_then(|old| old["visible"].as_bool())
+                .unwrap_or(false);
+            if !was_visible {
+                let _ = open_note_window(app, id, n);
+            }
         }
     }
 

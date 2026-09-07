@@ -112,6 +112,9 @@ pub fn on_tray_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
             use tauri::Emitter;
             let _ = app.emit("data-changed", &v);
             crate::windows::sync_note_windows(app, &v);
+            if show {
+                crate::windows::open_visible_notes(app, &v);
+            }
         }
         "quit" => {
             app.exit(0);
