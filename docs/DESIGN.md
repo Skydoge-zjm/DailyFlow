@@ -96,7 +96,7 @@
 - 所有命令输出 **JSON 一行**（`{"ok":true,...}` / `{"ok":false,"error":"..."}`），AI 解析稳定。
 - exit code：成功 0，失败 1。
 - 时间参数宽松：`today` / `tomorrow` / `+1` / `mon` / `2026-09-04` 均可，由 Rust 解析。
-- 无参数运行 `dailyflow.exe help` 时输出全部命令速查（即 CLI.md 的浓缩版）。
+- 启动分流：带参数 → CLI 模式；无参数（双击/开始菜单）→ 启动 GUI；显式 `dailyflow gui` 从任意上下文启动图形界面。
 
 ### 命令清单（覆盖全部人类操作）
 
@@ -125,6 +125,9 @@ note pin <id> on|off                      # 置顶
 # 通用
 day [date]                                # 某天总览（任务+统计）
 stats [date]                              # 统计：完成率等
+undo                                      # 撤销最近一次删除（单级）
+widget show|hide | widget pin on|off      # 今日悬浮窗控制
+theme <preset> [--light] [--overrides JSON]
 help                                      # 命令速查（AI 入口）
 version
 ```
@@ -178,7 +181,7 @@ src-tauri/src/
 └── tray.rs            # 托盘菜单与事件
 ```
 
-**CLI 模式判定**：程序带参数启动且首个参数不是 Tauri 内部参数 → 走 CLI（不创建任何窗口，秒进秒出）。注意：Tauri 打包的 exe 直接跑子命令即可，无需额外二进制。
+**CLI 模式判定**：程序带参数启动 → 走 CLI（不创建任何窗口，秒进秒出）；无参数 → 启动 GUI；`gui` 子命令显式启动 GUI。注意：Tauri 打包的 exe 直接跑子命令即可，无需额外二进制。
 
 **GUI 实时性**：GUI 启动时记录 data.json 的 mtime，`tokio` 间隔 800ms 轮询 mtime（比文件监听 API 简单可靠，Windows 上 crossbeam/notify 均有坑），变化则重载并经 `emit` 推给所有窗口。
 
