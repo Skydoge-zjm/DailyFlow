@@ -25,10 +25,6 @@ chrono = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-[target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_System_Console"] }
-
-
 [features]
 # 此 feature 让 tauri 以 release 模式嵌入 frontendDist 资产（而非连接 devUrl）。
 # `cargo build --release` 需 `--features custom-protocol`；`tauri build` 会自动启用。

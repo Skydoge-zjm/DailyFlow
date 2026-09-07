@@ -54,6 +54,7 @@ fn run_gui() {
             let handle = app.handle().clone();
             std::thread::spawn(move || {
                 let mut last = store_mtime(&store.path);
+                let mut previous = serde_json::to_value(store.load()).unwrap_or(serde_json::json!({}));
                 loop {
                     std::thread::sleep(std::time::Duration::from_millis(800));
                     let cur = store_mtime(&store.path);
@@ -63,8 +64,9 @@ fn run_gui() {
                         if let Ok(v) = serde_json::to_value(&d) {
                             use tauri::Emitter;
                             let _ = handle.emit("data-changed", &v);
-                            windows::sync_note_windows(&handle, &v);
+                            windows::sync_note_windows_with_previous(&handle, &previous, &v);
                             update_tray_from_data(&handle, &d);
+                            previous = v;
                         }
                     }
                 }
@@ -119,29 +121,21 @@ fn update_tray_from_data(app: &tauri::AppHandle, d: &model::Data) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // CLI 模式：带参数启动（dev 下 Tauri 不会带参数启动 GUI）
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if !args.is_empty() {
-        // GUI 内部参数白名单之外都视为 CLI
-        let code = cli::run_cli(args);
-        std::process::exit(code);
-    }
-    // 无参数：CLI 上下文（脚本/AI 调用）输出帮助后立即退出，避免"挂起"；
-    // 仅当拥有控制台窗口（用户双击/从终端直接启动）时才进入 GUI。
-    #[cfg(windows)]
-    {
-        if !cli::has_console_input() {
-            // 无控制台（GUI 上下文，如双击快捷方式）→ 正常启动图形界面
-            run_gui();
-            return;
-        }
-        // 有控制台但可能是从终端启动：仍启动 GUI，但打印提示
-        // 注：双击 .exe 时 Windows 会创建临时控制台，此处保守地直接启动 GUI
+
+    // 显式 `gui` 子命令：从任意上下文启动图形界面
+    if args.first().map(|s| s.as_str()) == Some("gui") {
         run_gui();
         return;
     }
-    #[cfg(not(windows))]
-    {
-        run_gui();
+
+    // 带参数：CLI 模式
+    if !args.is_empty() {
+        let code = cli::run_cli(args);
+        std::process::exit(code);
     }
+
+    // 无参数是用户双击应用或从开始菜单启动，进入主窗口。
+    // CLI 调用仍通过带参数的子命令分流；需要显式启动 GUI 也可使用 `dailyflow gui`。
+    run_gui();
 }

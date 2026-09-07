@@ -244,30 +244,4 @@ pub fn dispatch_pub(ctx: &Ctx, args: &[String]) -> Result<Value, String> {
     dispatch(ctx, args)
 }
 
-/// 判断进程是否拥有控制台输入句柄（区分"双击启动"与"终端/脚本调用"）。
-/// 双击 GUI exe 时 Windows 分配的临时控制台没有输入缓冲；
-/// 从终端启动时 stdin 是控制台，从管道/脚本调用时 stdin 是管道或文件。
-#[cfg(windows)]
-pub fn has_console_input() -> bool {
-    use windows_sys::Win32::System::Console::{GetConsoleMode, GetStdHandle, STD_INPUT_HANDLE};
-    unsafe {
-        let handle = GetStdHandle(STD_INPUT_HANDLE);
-        if handle.is_null() {
-            return false;
-        }
-        let mut mode: u32 = 0;
-        // GetConsoleMode 只对控制台句柄成功；对管道/文件/断开句柄返回 0
-        GetConsoleMode(handle, &mut mode) != 0
-    }
-}
-
-#[cfg(not(windows))]
-pub fn has_console_input() -> bool {
-    false
-}
-
 // 保留 flag 函数的 has_flag 供未来布尔开关使用
-#[allow(dead_code)]
-fn _unused() {
-    let _ = has_flag(&[], "x");
-}
