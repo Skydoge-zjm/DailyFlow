@@ -9,6 +9,8 @@ const WD = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"
 
 interface WidgetData {
   tasks: Task[];
+  deadlines: Task[];
+  goals: Task[];
   done: number;
   total: number;
 }
@@ -19,10 +21,11 @@ let summaryEl: HTMLElement;
 let addInput: HTMLInputElement;
 let headSub: HTMLElement;
 let dateEl: HTMLElement;
-let currentData: WidgetData = { tasks: [], done: 0, total: 0 };
+let currentData: WidgetData = { tasks: [], deadlines: [], goals: [], done: 0, total: 0 };
 let saving = false;
 
 window.addEventListener("DOMContentLoaded", () => {
+  if (new URLSearchParams(location.search).get("view") !== "widget") return;
   document.body.dataset.view = "widget";
   build();
   void reload();
@@ -44,24 +47,27 @@ async function reload() {
 
 function apply(d: Data) {
   const today = todayStr();
-  // 今日任务（normal/deadline 到期日）+ 3 天内将到期的截止任务（长期目标不进悬浮窗，避免噪音）
+  // 今日任务（normal/deadline 到期日）
   const tasks = d.tasks
     .filter((t) => t.date === today && t.kind !== "goal")
     .sort((a, b) => (a.start ?? "99:99").localeCompare(b.start ?? "99:99") || a.id.localeCompare(b.id));
+  // 截止任务：今日到期在 tasks 里；未来的（全部未完成）单独一组
   const deadlinesSoon = d.tasks
-    .filter((t) => t.kind === "deadline" && !t.done && t.date > today && t.date <= plusDays(today, 3))
+    .filter((t) => t.kind === "deadline" && !t.done && t.date > today)
     .sort((a, b) => a.date.localeCompare(b.date));
-  const all = [...tasks, ...deadlinesSoon];
-  // 进度只按今日任务统计（未来截止任务计入列表但不压低今日完成度）
-  currentData = { tasks: all, done: tasks.filter((t) => t.done).length, total: tasks.length };
+  // 长期目标：单独一组，不参与今日完成度统计
+  const goals = d.tasks.filter((t) => t.kind === "goal" && !t.done);
+  // 进度只按今日任务统计（未来截止任务与长期目标计入列表但不压低今日完成度）
+  // 三组互斥：今日（含今天到期的截止）、未来截止、长期目标
+  currentData = {
+    tasks,
+    deadlines: deadlinesSoon,
+    goals,
+    done: tasks.filter((t) => t.done).length,
+    total: tasks.length,
+  };
   render();
   applyTheme(d.settings.theme_preset || "classic-dark", d.settings.theme === "light", d.settings.theme_overrides || {});
-}
-
-function plusDays(date: string, n: number): string {
-  const d = new Date(date + "T00:00:00");
-  d.setDate(d.getDate() + n);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function todayStr(): string {
@@ -210,14 +216,25 @@ function build() {
 }
 
 function render() {
-  const { tasks, done, total } = currentData;
+  const { tasks, deadlines, goals, done, total } = currentData;
   listEl.innerHTML = "";
-  if (!tasks.length) {
+  if (!tasks.length && !deadlines.length && !goals.length) {
     listEl.append(
       el("div", { class: "w-empty" }, el("div", { class: "big" }, "🌤"), "今天没有安排", el("div", {}, "下方输入框快速添加")),
     );
   } else {
-    for (const t of tasks) listEl.append(taskRow(t));
+    if (deadlines.length) {
+      listEl.append(el("div", { class: "w-group" }, `⏳ 临近截止 ${deadlines.length}`));
+      for (const t of deadlines) listEl.append(taskRow(t));
+    }
+    if (tasks.length) {
+      listEl.append(el("div", { class: "w-group" }, "今日"));
+      for (const t of tasks) listEl.append(taskRow(t));
+    }
+    if (goals.length) {
+      listEl.append(el("div", { class: "w-group w-group-goal" }, `◎ 长期目标 ${goals.length}`));
+      for (const t of goals) listEl.append(taskRow(t));
+    }
   }
   const pct = total ? Math.round((done / total) * 100) : 0;
   summaryEl.innerHTML = "";
@@ -239,7 +256,9 @@ function render() {
 }
 
 function taskRow(t: Task): HTMLElement {
-  const row = el("div", { class: `w-task${t.done ? " done" : ""}` });
+  const isGoal = t.kind === "goal";
+  const isDeadline = t.kind === "deadline";
+  const row = el("div", { class: `w-task${t.done ? " done" : ""}${isGoal ? " is-goal" : ""}${isDeadline ? " is-deadline" : ""}` });
   const pri = document.createElement("span");
   pri.className = `w-pri${t.priority === "high" ? " high" : t.priority === "low" ? " low" : ""}`;
   const check = document.createElement("button");
@@ -259,8 +278,11 @@ function taskRow(t: Task): HTMLElement {
   const title = el("div", { class: "w-title" }, t.title);
   body.append(title);
   if (t.start) body.append(el("div", { class: "w-time" }, `🕐 ${t.start}${t.end ? "–" + t.end : ""}`));
-  if (t.kind === "deadline" && t.date && t.date !== todayStr()) {
-    body.append(el("div", { class: "w-time" }, `⏳ ${t.date.slice(5)} 截止`));
+  if (isDeadline && t.date && t.date !== todayStr()) {
+    body.append(el("div", { class: "w-time w-deadline" }, `⏳ ${t.date.slice(5)} 截止`));
+  }
+  if (isGoal) {
+    body.append(el("div", { class: "w-time w-goal" }, t.date ? `◎ 目标日 ${t.date.slice(5)}` : "◎ 长期"));
   }
   row.append(pri, check, body);
   return row;
