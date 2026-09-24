@@ -1,37 +1,25 @@
 // 主窗口 UI 渲染（无框架，纯 DOM）
-import type { Data, Note, Settings, Task } from "./types.ts";
-import { PRESETS, THEME_VARS, type ThemeOverrides } from "./themes.ts";
+import type { Data, Quadrant, Task } from "./types.ts";
+import { el, taskQuadrant, type RenderOpts } from "./ui-shared.ts";
+import { taskClearDoneArgs, taskDeleteArgs, taskEditArgs, taskToggleArgs, undoArgs } from "./cli-args.ts";
+import { openTaskEditor } from "./task-editor.ts";
+import { quickAdd } from "./quick-add.ts";
+import { notesPanel } from "./notes-panel.ts";
+import { openThemePanel } from "./theme-panel.ts";
+import { openCliPathPanel } from "./cli-path-panel.ts";
 
-export interface RenderOpts {
-  data: Data;
-  selectedDate: string;
-  onSelectDate: (d: string) => void;
-  onCall: (args: string[]) => Promise<{ ok: boolean; data?: unknown; error?: string }>;
-  onSettings: (patch: Partial<Settings>) => Promise<void>;
-  onOpenNote: (n: Note) => void;
-  onNewNote: () => void;
-}
-
-export function el<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  attrs: Record<string, string | ((...args: unknown[]) => unknown)> = {},
-  ...children: (Node | string | null | undefined)[]
-): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (typeof v === "function") {
-      (node as unknown as Record<string, unknown>)[k] = v;
-    } else if (k === "class") node.className = v;
-    else node.setAttribute(k, v);
-  }
-  for (const c of children) {
-    if (c == null) continue;
-    node.append(typeof c === "string" ? document.createTextNode(c) : c);
-  }
-  return node;
-}
+export { el, openTaskEditor };
+export type { RenderOpts };
 
 const WD = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+const QUADRANT_META: Record<Quadrant, { label: string; short: string }> = {
+  q1: { label: "重要且紧急", short: "Q1" },
+  q2: { label: "重要不紧急", short: "Q2" },
+  q3: { label: "不重要但紧急", short: "Q3" },
+  q4: { label: "不重要不紧急", short: "Q4" },
+};
+let taskSearch = "";
+let taskView: "day" | "all" | "open" | "done" | "matrix" = "day";
 
 function fmtDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -45,6 +33,8 @@ function openCountText(tasks: Task[]): string {
 }
 
 export function renderApp(root: HTMLElement, opts: RenderOpts): void {
+  const searchFocused = document.activeElement?.classList.contains("task-search");
+  const searchCaret = searchFocused ? (document.activeElement as HTMLInputElement).selectionStart : null;
   document.body.classList.add("modern-ui");
   root.classList.add("modern-app");
   root.innerHTML = "";
@@ -102,6 +92,10 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
         el("span", { class: "btn-glyph", "aria-hidden": "true" }, "✦"),
         el("span", { class: "btn-label" }, "外观"),
       ),
+      el("button", { class: "icon-btn action-btn", title: "命令行设置", "aria-label": "命令行设置", onclick: openCliPathPanel },
+        el("span", { class: "btn-glyph", "aria-hidden": "true" }, "⚙"),
+        el("span", { class: "btn-label" }, "设置"),
+      ),
     ),
   );
 
@@ -116,7 +110,7 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
     ["晚上", []],
     ["全天 / 待办", []],
   ];
-  for (const t of dayTasks.filter((t) => t.kind !== "deadline")) {
+  for (const t of dayTasks.filter((t) => t.kind === "normal")) {
     if (!t.start) groups[3][1].push(t);
     else if (t.start < "12:00") groups[0][1].push(t);
     else if (t.start < "18:00") groups[1][1].push(t);
@@ -154,8 +148,8 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
   // 截止任务（截止日 >= 选中日，未完成，日期非空）——按剩余天数升序
   const todayStr = fmtDate(new Date());
   const deadlines = data.tasks
-    .filter((t) => t.kind === "deadline" && !t.done && t.date !== "" && t.date >= todayStr)
-    .sort((a, b) => a.date.localeCompare(b.date));
+    .filter((t) => t.kind === "deadline" && t.date !== "" && (t.date === selectedDate || (!t.done && t.date >= todayStr)))
+    .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
   if (deadlines.length) {
     any = true;
     listEl.append(
@@ -178,7 +172,7 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
     );
   }
 
-  if (!any && !overdueTasks.length) {
+  if (!any) {
     listEl.append(
       el("div", { class: "empty-state" },
         el("div", { class: "big" }, "—"),
@@ -188,12 +182,71 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
     );
   }
 
-  const openCount = dayTasks.filter((t) => !t.done).length;
+  const openCount = dayTasks.filter((t) => t.kind !== "goal" && !t.done).length;
+  const defaultItems = Array.from(listEl.childNodes);
+  const searchInput = el("input", { class: "task-search", type: "search", placeholder: "搜索任务", "aria-label": "搜索所有任务" });
+  searchInput.value = taskSearch;
+  const viewSelect = document.createElement("select");
+  viewSelect.className = "task-view-select";
+  viewSelect.setAttribute("aria-label", "筛选任务");
+  for (const [value, label] of [["day", "当前日期"], ["all", "全部任务"], ["open", "未完成"], ["done", "已完成"], ["matrix", "四象限"]] as const) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    viewSelect.append(option);
+  }
+  viewSelect.value = taskView;
+  const countBadge = el("span", { class: "count-badge" }, String(openCount));
+  const sectionTitle = el("h2", {}, taskView === "matrix" ? "四象限" : "日程与待办");
+  const refreshTaskList = () => {
+    if (taskView === "matrix") {
+      const query = taskSearch.trim().toLocaleLowerCase();
+      const matches = data.tasks
+        .filter((task) => !task.done)
+        .filter((task) => !query || [task.title, task.notes, task.date, ...task.tags].some((value) => value.toLocaleLowerCase().includes(query)))
+        .sort((a, b) => taskQuadrant(a).localeCompare(taskQuadrant(b)) || (a.date || "9999").localeCompare(b.date || "9999") || a.id.localeCompare(b.id));
+      countBadge.textContent = String(matches.length);
+      listEl.replaceChildren(matrixBoard(matches, opts));
+      return;
+    }
+    if (taskView === "day" && !taskSearch.trim()) {
+      listEl.replaceChildren(...defaultItems);
+      countBadge.textContent = String(openCount);
+      return;
+    }
+    const query = taskSearch.trim().toLocaleLowerCase();
+    const matches = data.tasks
+      .filter((task) => (taskView !== "open" || !task.done) && (taskView !== "done" || task.done))
+      .filter((task) => !query || [task.title, task.notes, task.date, ...task.tags].some((value) => value.toLocaleLowerCase().includes(query)))
+      .sort((a, b) => Number(a.done) - Number(b.done) || (a.date || "9999").localeCompare(b.date || "9999") || a.id.localeCompare(b.id));
+    countBadge.textContent = String(matches.length);
+    listEl.replaceChildren(...(matches.length
+      ? matches.map((task) => taskItem(task, opts, true))
+      : [el("div", { class: "empty-state" }, el("div", { class: "empty-title" }, "没有符合条件的任务"))]));
+  };
+  searchInput.addEventListener("input", () => {
+    taskSearch = searchInput.value;
+    if (taskSearch.trim() && taskView === "day") {
+      taskView = "all";
+      viewSelect.value = "all";
+    }
+    refreshTaskList();
+  });
+  viewSelect.addEventListener("change", () => {
+    taskView = viewSelect.value as typeof taskView;
+    sectionTitle.textContent = taskView === "matrix" ? "四象限" : "日程与待办";
+    if (taskView === "day") {
+      taskSearch = "";
+      searchInput.value = "";
+    }
+    refreshTaskList();
+  });
+  refreshTaskList();
   const tasksCol = el(
     "div",
     { class: "tasks-col" },
     el("div", { class: "workspace-intro" },
-      el("div", { class: "section-kicker" }, "WORKSPACE / TODAY"),
+      el("div", { class: "section-kicker" }, today === selectedDate ? "WORKSPACE / TODAY" : "WORKSPACE / SCHEDULE"),
       el("div", { class: "workspace-title-row" },
         el("h1", { class: "workspace-title" }, today === selectedDate ? "今天的节奏" : "这一天的安排"),
         el("span", { class: "workspace-date" }, selectedDate.slice(5).replace("-", " / ")),
@@ -202,14 +255,28 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
     ),
     statCards(data, today),
     el("div", { class: "section-head" },
-      el("h2", {}, "日程与待办"),
-      openCount > 0 ? el("span", { class: "count-badge" }, String(openCount)) : null,
+      sectionTitle,
+      countBadge,
       el("div", { class: "spacer" }),
       selectedDate !== today
         ? el("button", { class: "mini-btn", onclick: () => opts.onSelectDate(today) }, "← 回到今天")
         : null,
-      el("button", { class: "mini-btn", onclick: async () => { await opts.onCall(["task", "clear-done", selectedDate]); window.__dailyflow.rerender(); } }, "清理已完成"),
+      el("button", { class: "mini-btn", onclick: async () => {
+        const result = await opts.onCall(taskClearDoneArgs(selectedDate));
+        if (!result.ok) return;
+        const data = result.data as { removed?: number; deleted_ids?: string[] } | undefined;
+        const removed = Number(data?.removed || 0);
+        const deletedIds = data?.deleted_ids || [];
+        window.__dailyflow.rerender();
+        if (removed > 0) {
+          window.__dailyflow.undoToast(`已清理 ${removed} 项`, async () => {
+            const restored = await opts.onCall(undoArgs(...deletedIds));
+            if (restored.ok) window.__dailyflow.rerender();
+          });
+        }
+      } }, "清理已完成"),
     ),
+    el("div", { class: "task-tools" }, searchInput, viewSelect),
     listEl,
   );
 
@@ -234,6 +301,10 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
   );
 
   root.append(topbar, el("div", { class: "layout" }, tasksCol, sideCol), statusbar);
+  if (searchFocused) {
+    searchInput.focus();
+    if (searchCaret !== null) searchInput.setSelectionRange(searchCaret, searchCaret);
+  }
 }
 
 /** 概览卡：今天 / 逾期 / 长期 三张数字卡 */
@@ -307,11 +378,47 @@ function daysUntil(date: string): number {
   return Math.round((d.getTime() - now.getTime()) / 86400000);
 }
 
-function taskItem(t: Task, opts: RenderOpts): HTMLElement {
+function matrixBoard(tasks: Task[], opts: RenderOpts): HTMLElement {
+  const groups: Quadrant[] = ["q1", "q2", "q3", "q4"];
+  const board = el("div", { class: "quadrant-board" });
+  for (const quadrant of groups) {
+    const items = tasks.filter((task) => taskQuadrant(task) === quadrant);
+    const meta = QUADRANT_META[quadrant];
+    const cell = el(
+      "section",
+      { class: `quadrant-cell quadrant-${quadrant}` },
+      el("div", { class: "quadrant-head" },
+        el("div", { class: "quadrant-code" }, meta.short),
+        el("div", { class: "quadrant-heading" },
+          el("strong", {}, meta.label),
+          el("span", { class: "quadrant-count" }, String(items.length)),
+        ),
+      ),
+      el("div", { class: "quadrant-hint" }, quadrant === "q1" ? "先处理，避免继续积压" : quadrant === "q2" ? "留出时间，安排进计划" : quadrant === "q3" ? "尽量委派或快速处理" : "减少、合并或稍后再做"),
+      el("div", { class: "quadrant-items" },
+        ...(items.length
+          ? items.map((task) => taskItem(task, opts, true))
+          : [el("div", { class: "quadrant-empty" }, "暂无任务")]),
+      ),
+    );
+    board.append(cell);
+  }
+  return board;
+}
+
+function taskItem(t: Task, opts: RenderOpts, showDate = false): HTMLElement {
   const today = fmtDate(new Date());
   const overdue = !t.done && t.date !== "" && t.date < today && t.kind !== "goal";
   const meta: (Node | string | null)[] = [];
+  const quadrant = taskQuadrant(t);
+  meta.push(el("span", { class: `quadrant-chip quadrant-chip-${quadrant}` }, QUADRANT_META[quadrant].short));
+  if (showDate) meta.push(el("span", { class: "date-chip" }, t.date || "无目标日"));
   if (t.start) meta.push(el("span", { class: "time-chip" }, `◷ ${t.start}${t.end ? "–" + t.end : ""}`));
+  if (t.remind_at) meta.push(el("span", { class: "remind-chip" }, `提醒 ${t.remind_at}`));
+  if (t.repeat && t.repeat !== "none") {
+    const labels = { daily: "每天", weekly: "每周", monthly: "每月" };
+    meta.push(el("span", { class: "repeat-chip" }, labels[t.repeat]));
+  }
   if (overdue) meta.push(el("span", { class: "overdue" }, "已逾期"));
   if (t.kind === "deadline" && t.date) {
     const n = daysUntil(t.date);
@@ -332,7 +439,7 @@ function taskItem(t: Task, opts: RenderOpts): HTMLElement {
       class: "task-check",
       title: t.done ? "标记未完成" : "完成",
       onclick: async () => {
-        await opts.onCall(["task", "toggle", t.id]);
+        await opts.onCall(taskToggleArgs(t.id));
         window.__dailyflow.rerender();
       },
     }, t.done ? "✓" : ""),
@@ -342,29 +449,22 @@ function taskItem(t: Task, opts: RenderOpts): HTMLElement {
       t.notes ? el("div", { class: "task-meta" }, t.notes) : null,
     ),
     el("button", {
+      class: "task-edit",
+      title: "编辑任务",
+      "aria-label": `编辑 ${t.title}`,
+      "data-focus-key": `task-edit-${t.id}`,
+      onclick: () => openTaskEditor(t, opts),
+    }, "编辑"),
+    el("button", {
       class: "task-del",
       title: "删除",
       onclick: async () => {
-        // 删除前记下快照，误删可一键撤销
-        const snapshot = JSON.stringify(t);
-        const res = await opts.onCall(["task", "delete", t.id]);
+        const res = await opts.onCall(taskDeleteArgs(t.id));
         if (res.ok) {
           window.__dailyflow.rerender();
           window.__dailyflow.undoToast("已删除任务", async () => {
-            const old = JSON.parse(snapshot) as Task;
-            const args = ["task", "add", old.title, "--kind", old.kind, "--date", old.date || "today"];
-            if (old.start) args.push("--start", old.start);
-            if (old.end) args.push("--end", old.end);
-            if (old.priority !== "normal") args.push("--priority", old.priority);
-            if (old.tags.length) args.push("--tags", old.tags.join(","));
-            if (old.notes) args.push("--notes", old.notes);
-            if (old.done) {
-              await opts.onCall(args);
-              const all = window.__dailyflow.data.tasks;
-              const newly = all.length ? all[all.length - 1] : undefined;
-              await opts.onCall(["task", "done", (newly as Task | undefined)?.id ?? ""]);
-            }
-            window.__dailyflow.rerender();
+            const restored = await opts.onCall(undoArgs(t.id));
+            if (restored.ok) window.__dailyflow.rerender();
           });
         }
       },
@@ -372,6 +472,7 @@ function taskItem(t: Task, opts: RenderOpts): HTMLElement {
   );
   if (t.kind === "goal") item.classList.add("is-goal");
   if (t.kind === "deadline") item.classList.add("is-deadline");
+  item.classList.add(`quadrant-${quadrant}`);
 
   // 双击标题 → 行内编辑（标题 + 时间），Enter 保存 / Esc 取消
   titleEl.addEventListener("dblclick", () => beginInlineEdit(titleEl, t, opts));
@@ -396,11 +497,12 @@ function beginInlineEdit(titleEl: HTMLElement, t: Task, opts: RenderOpts): void 
     done = true;
     const val = input.value.trim();
     if (save && val && val !== old) {
-      await opts.onCall(["task", "edit", t.id, "--title", val]);
+      await opts.onCall(taskEditArgs(t.id, [["title", old, val]]));
     }
     window.__dailyflow.rerender();
   };
   input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.isComposing || e.keyCode === 229)) return;
     if (e.key === "Enter") void finish(true);
     else if (e.key === "Escape") void finish(false);
     e.stopPropagation();
@@ -419,9 +521,12 @@ function weekCal(data: Data, selected: string, today: string, opts: RenderOpts):
     const ds = fmtDate(d);
     const dayTasks = data.tasks.filter((t) => t.date === ds);
     const cell = el(
-      "div",
+      "button",
       {
         class: `week-day${ds === selected ? " selected" : ""}${ds === today ? " today" : ""}`,
+        type: "button",
+        "aria-pressed": String(ds === selected),
+        "aria-label": `${ds}，${dayTasks.length} 项任务${ds === selected ? "，当前日期" : ""}`,
         onclick: () => opts.onSelectDate(ds),
       },
       el("span", { class: "wd" }, WD[d.getDay()].slice(1)),
@@ -466,365 +571,4 @@ function weekCal(data: Data, selected: string, today: string, opts: RenderOpts):
     ),
     grid,
   );
-}
-
-// 快速添加表单的跨重渲染状态（renderApp 会全量重建 DOM，
-// 后端 data-changed 事件每 800ms 可能触发一次重建；若不保留，用户填到一半的
-// 标题/时间/类型会被重置——例如选了"长期"后点别处又跳回"待办"）
-let qaState = { title: "", time: "", kind: "normal", pri: "" };
-
-function quickAdd(opts: RenderOpts, selectedDate: string): HTMLElement {
-  const title = el("input", { placeholder: "捕捉一项计划…", "aria-label": "任务标题" });
-  const time = el("input", { placeholder: "时间 / 目标日", "aria-label": "时间或目标日期" });
-  const pri = document.createElement("select");
-  for (const [v, label] of [["", "普通"], ["high", "高"], ["low", "低"]] as const) {
-    const o = document.createElement("option");
-    o.value = v;
-    o.textContent = label;
-    pri.append(o);
-  }
-  const kind = document.createElement("select");
-  for (const [v, label] of [
-    ["normal", "✓ 待办"],
-    ["deadline", "⏳ 截止"],
-    ["goal", "🌱 长期"],
-  ] as const) {
-    const o = document.createElement("option");
-    o.value = v;
-    o.textContent = label;
-    kind.append(o);
-  }
-  // 恢复上次未提交的输入
-  title.value = qaState.title;
-  time.value = qaState.time;
-  kind.value = qaState.kind;
-  pri.value = qaState.pri;
-  title.addEventListener("input", () => (qaState.title = title.value));
-  time.addEventListener("input", () => (qaState.time = time.value));
-  kind.addEventListener("change", () => (qaState.kind = kind.value));
-  pri.addEventListener("change", () => (qaState.pri = pri.value));
-  const submitBtn = el("button", { class: "qa-submit", type: "submit" },
-    el("span", { class: "qa-submit-glyph", "aria-hidden": "true" }, "+"),
-    el("span", { class: "qa-submit-label" }, "添加到 " + selectedDate.slice(5)),
-  );
-  const syncKindUi = () => {
-    if (kind.value === "goal") {
-      time.placeholder = "目标日期（可空，如 2026-12-31）";
-      submitBtn.querySelector(".qa-submit-label")!.textContent = "新长期目标";
-    } else if (kind.value === "deadline") {
-      time.placeholder = "时间（可空，如 9:30）";
-      submitBtn.querySelector(".qa-submit-label")!.textContent = "截止于 " + selectedDate.slice(5);
-    } else {
-      time.placeholder = "时间（可空，如 9:30）";
-      submitBtn.querySelector(".qa-submit-label")!.textContent = "添加到 " + selectedDate.slice(5);
-    }
-  };
-  kind.addEventListener("change", syncKindUi);
-  syncKindUi();
-  const form = el("form", {},
-    title,
-    el("div", { class: "qa-row" }, time, pri),
-    el("div", { class: "qa-row" }, kind),
-    submitBtn,
-    el("div", { class: "qa-hint" }, "截止日会自动进入追踪 · 长期目标会常驻列表"),
-  );
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    if (!title.value.trim()) return;
-    const args = ["task", "add", title.value.trim(), "--kind", kind.value];
-    if (kind.value === "goal") {
-      // 长期目标：date 可空；用户手动选了日期则作为目标日
-      if (time.value.trim() && /^\d{4}-\d{2}-\d{2}$/.test(time.value.trim())) {
-        args.push("--date", time.value.trim());
-      }
-    } else {
-      args.push("--date", selectedDate);
-      if (time.value.trim()) args.push("--start", time.value.trim());
-    }
-    if (pri.value) args.push("--priority", pri.value);
-    const res = await opts.onCall(args);
-    if (res.ok) {
-      title.value = "";
-      time.value = "";
-      kind.value = "normal";
-      pri.value = "";
-      qaState = { title: "", time: "", kind: "normal", pri: "" };
-      window.__dailyflow.rerender();
-    }
-  });
-  return el("div", { class: "quick-add" },
-    el("div", { class: "panel-heading" },
-      el("div", { class: "panel-eyebrow" }, "CAPTURE"),
-      el("h3", {}, "快速添加"),
-    ),
-    form,
-  );
-}
-
-function notesPanel(data: Data, opts: RenderOpts): HTMLElement {
-  const list = el("div", { class: "notes-list" });
-  const colorDot: Record<string, string> = {
-    yellow: "#fff3bf", green: "#d3f9d8", blue: "#d0ebff",
-    pink: "#ffdeeb", purple: "#e5dbff", dark: "#25272e",
-  };
-  for (const n of data.notes) {
-    const toggleBtn = el("button", {
-      class: "note-action",
-      title: n.visible ? "隐藏便签窗口" : "显示便签窗口",
-      onclick: (e: unknown) => {
-        (e as Event).stopPropagation();
-        void (async () => {
-          await opts.onCall(["note", n.visible ? "hide" : "show", n.id]);
-          if (n.visible) await invokeClose(n.id);
-          window.__dailyflow.rerender();
-        })();
-      },
-    }, n.visible ? "◉" : "○");
-    list.append(
-      el("div", {
-        class: "note-row",
-        onclick: () => opts.onOpenNote(n),
-        title: "点击打开便签窗口",
-      },
-        el("span", {
-          class: "note-dot",
-          style: `background:${colorDot[n.color] || "#fff3bf"}`,
-        }),
-        el("div", { class: "task-body" },
-          el("div", { class: "task-title", style: "font-size:13px" }, n.title || n.body.split("\n")[0] || "（空）"),
-          el("div", { class: "task-meta" }, n.visible ? "已显示" : "已隐藏", ` · ${n.color}`),
-        ),
-        toggleBtn,
-        el("button", {
-          class: "note-delete",
-          title: "删除便签",
-          onclick: (e: unknown) => {
-            (e as Event).stopPropagation();
-            void (async () => {
-              await opts.onCall(["note", "delete", n.id]);
-              await invokeClose(n.id);
-              window.__dailyflow.rerender();
-            })();
-          },
-        }, "✕"),
-      ),
-    );
-  }
-  if (!data.notes.length) {
-    list.append(el("div", { class: "notes-empty" }, "还没有便签 · 顶栏可新建"));
-  }
-  return el("div", { class: "quick-add notes-panel" },
-    el("div", { class: "panel-heading" },
-      el("div", { class: "panel-eyebrow" }, "MEMOS"),
-      el("div", { class: "panel-title-row" },
-        el("h3", {}, "桌面便签"),
-        el("span", { class: "panel-count" }, String(data.notes.length)),
-      ),
-    ),
-    list,
-  );
-}
-
-async function invokeClose(id: string): Promise<void> {
-  const { invoke } = await import("@tauri-apps/api/core");
-  await invoke("fe_close_note_window", { id });
-}
-
-/* ============ 主题与外观面板 ============ */
-
-function openThemePanel(opts: RenderOpts): void {
-  document.querySelector(".theme-panel")?.remove();
-  const s = opts.data.settings;
-  const overrides: ThemeOverrides = { ...(s.theme_overrides || {}) };
-
-  const panel = el("div", { class: "theme-panel" });
-  const backdrop = el("div", { class: "theme-backdrop" });
-
-  // ---- preset 选择 ----
-  const presetRow = el("div", { class: "tp-presets" });
-  const rebuildPresetRow = () => {
-    presetRow.innerHTML = "";
-    for (const p of PRESETS) {
-      const chip = el(
-        "button",
-        {
-          class: `tp-preset${(s.theme_preset || "classic-dark") === p.name ? " active" : ""}`,
-          title: p.label,
-          onclick: async () => {
-            await opts.onSettings({ theme_preset: p.name });
-          },
-        },
-        el("span", { class: "tp-swatch" },
-          el("i", { style: `background:${p.swatch.bg}` }),
-          el("i", { style: `background:${p.swatch.card}` }),
-          el("i", { style: `background:${p.swatch.accent}` }),
-          el("i", { style: `background:${p.swatch.text}` }),
-        ),
-        el("span", { class: "tp-name" }, p.label),
-      );
-      presetRow.append(chip);
-    }
-  };
-  rebuildPresetRow();
-
-  // ---- 变量自定义 ----
-  const varsGrid = el("div", { class: "tp-vars" });
-  const rebuildVars = () => {
-    varsGrid.innerHTML = "";
-    for (const v of THEME_VARS) {
-      const cur = overrides[v.key] ?? "";
-      const row = el("div", { class: "tp-var" });
-      const label = el("label", {}, v.label);
-      label.title = v.key;
-      row.append(label);
-      if (v.kind === "color") {
-        const swatch = el("button", { class: "tp-swatch-btn", title: "点击取色" });
-        const colorInput = document.createElement("input");
-        colorInput.type = "color";
-        const computed = getComputedStyle(document.documentElement).getPropertyValue(v.key).trim();
-        colorInput.value = toHexColor(cur || computed || "#888888");
-        colorInput.className = "tp-color-input";
-        swatch.style.background = colorInput.value;
-        colorInput.addEventListener("input", async () => {
-          swatch.style.background = colorInput.value;
-          overrides[v.key] = colorInput.value;
-          previewOverrides();
-        });
-        swatch.append(colorInput);
-        row.append(swatch);
-      } else {
-        const input = document.createElement("input");
-        input.type = "text";
-        input.className = "tp-text-input";
-        input.placeholder = "默认";
-        input.value = cur;
-        input.addEventListener("change", async () => {
-          if (input.value.trim()) overrides[v.key] = input.value.trim();
-          else delete overrides[v.key];
-          previewOverrides();
-        });
-        row.append(input);
-      }
-      const resetOne = el("button", {
-        class: "tp-reset-one",
-        title: "恢复默认",
-        onclick: async () => {
-          delete overrides[v.key];
-          void opts.onSettings({ theme_overrides: { ...overrides } });
-        },
-      }, "↺");
-      row.append(resetOne);
-      varsGrid.append(row);
-    }
-  };
-  rebuildVars();
-
-  // 实时预览：不落盘，只改 document 变量
-  function previewOverrides() {
-    const root = document.documentElement;
-    for (const [k, v] of Object.entries(overrides)) {
-      if (k.startsWith("--") && v) root.style.setProperty(k, v);
-    }
-  }
-  // 关闭面板且未应用时，撤销预览残留（重新按已保存设置应用一遍）
-  function cancelPreview() {
-    panel.remove();
-    backdrop.remove();
-    // 已保存的 overrides 之外的预览值要清掉：直接全量重放当前持久化设置
-    void opts.onSettings({ theme_overrides: { ...(s.theme_overrides || {}) } });
-  }
-
-  // ---- 底部操作 ----
-  const applyBtn = el("button", {
-    class: "tp-btn primary",
-    onclick: async () => {
-      await opts.onSettings({ theme_overrides: { ...overrides } });
-      panel.remove();
-      backdrop.remove();
-    },
-  }, "应用自定义");
-  const resetBtn = el("button", {
-    class: "tp-btn",
-    onclick: async () => {
-      for (const k of Object.keys(overrides)) delete overrides[k];
-      rebuildVars();
-      previewOverrides();
-      await opts.onSettings({ theme_overrides: {} });
-    },
-  }, "全部恢复默认");
-  const exportBtn = el("button", {
-    class: "tp-btn",
-    title: "复制当前主题 JSON（可分享/导入）",
-    onclick: async () => {
-      const json = JSON.stringify({ preset: s.theme_preset, theme: s.theme, overrides: { ...overrides } }, null, 2);
-      try {
-        await navigator.clipboard.writeText(json);
-        window.__dailyflow.toast("主题 JSON 已复制到剪贴板");
-      } catch {
-        window.__dailyflow.toast("复制失败，请手动选择文本", true);
-      }
-    },
-  }, "导出");
-  const importInput = document.createElement("textarea");
-  importInput.className = "tp-import";
-  importInput.placeholder = '粘贴主题 JSON 导入，如 {"preset":"warm-journal","overrides":{"--accent":"#e8965a"}}';
-  const importBtn = el("button", {
-    class: "tp-btn",
-    onclick: async () => {
-      try {
-        const parsed = JSON.parse(importInput.value) as { preset?: string; overrides?: ThemeOverrides };
-        await opts.onSettings({
-          theme_preset: parsed.preset || s.theme_preset,
-          theme_overrides: parsed.overrides || {},
-        });
-        panel.remove();
-        backdrop.remove();
-        window.__dailyflow.toast("主题已导入");
-      } catch {
-        window.__dailyflow.toast("JSON 解析失败", true);
-      }
-    },
-  }, "导入");
-
-  const actions = el("div", { class: "tp-actions" }, resetBtn, exportBtn, importBtn, applyBtn);
-
-  panel.append(
-    el("div", { class: "tp-title" }, "🎨 主题与外观"),
-    el("div", { class: "tp-sub" }, "预设"),
-    presetRow,
-    el("div", { class: "tp-sub" }, "自定义变量（覆盖当前预设）"),
-    varsGrid,
-    importInput,
-    actions,
-  );
-  backdrop.addEventListener("click", cancelPreview);
-  // Esc 关闭面板（等同点遮罩：撤销未应用的预览）
-  const escHandler = (e: KeyboardEvent) => {
-    if (e.key === "Escape") {
-      cancelPreview();
-      window.removeEventListener("keydown", escHandler);
-    }
-  };
-  window.addEventListener("keydown", escHandler);
-  // 面板移除时清理 Esc 监听（应用/导入路径也会 remove panel）
-  const observer = new MutationObserver(() => {
-    if (!document.body.contains(panel)) {
-      window.removeEventListener("keydown", escHandler);
-      observer.disconnect();
-    }
-  });
-  observer.observe(document.body, { childList: true });
-  document.body.append(backdrop, panel);
-}
-
-function toHexColor(c: string): string {
-  const s = c.trim();
-  if (/^#[0-9a-fA-F]{6}$/.test(s)) return s;
-  // rgba(r,g,b,a) → hex（丢弃 alpha）
-  const m = s.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-  if (m) {
-    const hex = (n: string) => Number(n).toString(16).padStart(2, "0");
-    return `#${hex(m[1])}${hex(m[2])}${hex(m[3])}`;
-  }
-  return "#888888";
 }

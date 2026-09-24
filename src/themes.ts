@@ -45,6 +45,25 @@ const PRESET_CSS: Record<string, string> = {
   "warm-journal": warmJournalCss,
 };
 
+export function sanitizeThemeOverrides(overrides: ThemeOverrides | undefined): ThemeOverrides {
+  const safe: ThemeOverrides = {};
+  for (const [key, value] of Object.entries(overrides || {})) {
+    const meta = THEME_VARS.find((variable) => variable.key === key);
+    if (!meta || typeof value !== "string" || value.length > 256 || /[;{}\\]/.test(value)) continue;
+    if (meta.kind === "color") {
+      const color = value.trim();
+      if (typeof CSS !== "undefined" && CSS.supports("color", color)) safe[key] = color;
+    } else if (meta.kind === "number") {
+      const match = value.trim().match(/^([+-]?(?:\d+\.?\d*|\.\d+))(?:px|rem|em)?$/i);
+      const number = match ? Number(match[1]) : NaN;
+      if (Number.isFinite(number) && number >= 0 && number <= 64) safe[key] = value.trim();
+    } else if (value.trim() && /^[\w\s'",-]+$/.test(value)) {
+      safe[key] = value.trim();
+    }
+  }
+  return safe;
+}
+
 export const PRESET_NAMES = ["classic-dark", "classic-light", ...Object.keys(PRESET_CSS)] as const;
 
 export interface ThemePresetMeta {
@@ -89,11 +108,12 @@ export function applyTheme(presetName: string, isLight: boolean, overrides: Them
     if (styleEl.textContent !== css) styleEl.textContent = css;
   }
 
-  // 2) 用户 overrides（清空后重写，保证删除的覆盖项复原）
-  for (const prop of Object.keys(root.style)) {
-    if (prop.startsWith("--")) root.style.removeProperty(prop);
-  }
-  for (const [k, v] of Object.entries(overrides || {})) {
-    if (k.startsWith("--") && v) root.style.setProperty(k, v);
+  // 2) 清掉之前的自定义属性，再重放当前 overrides。CSSStyleDeclaration
+  // 的 Object.keys() 在 Chromium 中返回索引键；应通过 item() 读取真实属性名。
+  const customProperties = Array.from({ length: root.style.length }, (_, index) => root.style.item(index))
+    .filter((property) => property.startsWith("--"));
+  for (const property of customProperties) root.style.removeProperty(property);
+  for (const [k, v] of Object.entries(sanitizeThemeOverrides(overrides))) {
+    root.style.setProperty(k, v);
   }
 }

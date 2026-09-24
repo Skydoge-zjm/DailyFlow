@@ -4,8 +4,10 @@ import "./main-widget.ts";
 import {
   renderApp,
   el,
+  openTaskEditor,
 } from "./ui.ts";
-import { applyTheme } from "./themes.ts";
+import type { RenderOpts } from "./ui.ts";
+import { applyTheme, sanitizeThemeOverrides } from "./themes.ts";
 import type { Data, Note, Settings, Task } from "./types.ts";
 
 export {};
@@ -15,8 +17,7 @@ declare global {
     __dailyflow: {
       data: Data;
       selected: string;
-      save: (d: Data) => Promise<void>;
-      saveSettings: (patch: Partial<Settings>) => Promise<void>;
+      saveSettings: (patch: Partial<Settings>) => Promise<boolean>;
       call: (args: string[]) => Promise<{ ok: boolean; data?: unknown; error?: string }>;
       rerender: () => void;
       toast: (msg: string, isErr?: boolean) => void;
@@ -35,18 +36,25 @@ const DEFAULT_SETTINGS: Settings = {
   widget_pinned: true,
   widget_x: 0,
   widget_y: 0,
+  widget_w: 236,
+  widget_h: 300,
+  widget_monitor: "",
 };
 
 // 主窗口逻辑（body[data-view] 缺省为 main）
 const appEl = document.getElementById("app")!;
 
-let data: Data = { version: 1, tasks: [], notes: [], settings: { ...DEFAULT_SETTINGS } };
+let data: Data = { version: 2, tasks: [], notes: [], settings: { ...DEFAULT_SETTINGS } };
+let hasLoadedData = false;
+let dataRevision = 0;
+let reloadGeneration = 0;
 let selectedDate = todayStr();
 let toastTimer: number | undefined;
+let currentRenderOpts: RenderOpts | undefined;
 const previewMode = new URLSearchParams(location.search).has("preview");
 
 function normSettings(s: Partial<Settings> | undefined): Settings {
-  return { ...DEFAULT_SETTINGS, ...(s || {}), theme_overrides: s?.theme_overrides || {} };
+  return { ...DEFAULT_SETTINGS, ...(s || {}), theme_overrides: sanitizeThemeOverrides(s?.theme_overrides) };
 }
 
 function todayStr(): string {
@@ -57,14 +65,14 @@ function todayStr(): string {
 function previewData(): Data {
   const today = todayStr();
   const tasks: Task[] = [
-    { id: "preview-1", title: "整理本周项目进展", notes: "发给团队的版本", date: today, start: "09:30", end: "10:15", done: false, priority: "high", kind: "normal", tags: ["工作"], created_at: "", completed_at: null },
-    { id: "preview-2", title: "午间散步 20 分钟", notes: "离开屏幕，换个节奏", date: today, start: "12:30", end: null, done: true, priority: "low", kind: "normal", tags: ["生活"], created_at: "", completed_at: today },
-    { id: "preview-3", title: "阅读产品反馈并标注重点", notes: "", date: today, start: "15:00", end: "16:00", done: false, priority: "normal", kind: "normal", tags: ["研究"], created_at: "", completed_at: null },
-    { id: "preview-4", title: "准备周五演示稿", notes: "", date: today, start: null, end: null, done: false, priority: "normal", kind: "deadline", tags: ["重要"], created_at: "", completed_at: null },
-    { id: "preview-5", title: "建立每周复盘习惯", notes: "", date: "", start: null, end: null, done: false, priority: "low", kind: "goal", tags: [], created_at: "", completed_at: null },
+    { id: "preview-1", title: "整理本周项目进展", notes: "发给团队的版本", date: today, start: "09:30", end: "10:15", done: false, priority: "high", kind: "normal", quadrant: "q1", repeat: "none", remind_at: "09:30", tags: ["工作"], created_at: "", completed_at: null },
+    { id: "preview-2", title: "午间散步 20 分钟", notes: "离开屏幕，换个节奏", date: today, start: "12:30", end: null, done: true, priority: "low", kind: "normal", quadrant: "q4", repeat: "daily", remind_at: "12:30", tags: ["生活"], created_at: "", completed_at: today },
+    { id: "preview-3", title: "阅读产品反馈并标注重点", notes: "", date: today, start: "15:00", end: "16:00", done: false, priority: "normal", kind: "normal", quadrant: "q2", repeat: "none", remind_at: "15:00", tags: ["研究"], created_at: "", completed_at: null },
+    { id: "preview-4", title: "准备周五演示稿", notes: "", date: today, start: null, end: null, done: false, priority: "normal", kind: "deadline", quadrant: "q1", repeat: "none", tags: ["重要"], created_at: "", completed_at: null },
+    { id: "preview-5", title: "建立每周复盘习惯", notes: "", date: "", start: null, end: null, done: false, priority: "low", kind: "goal", quadrant: "q2", repeat: "none", tags: [], created_at: "", completed_at: null },
   ];
   return {
-    version: 1,
+    version: 2,
     settings: { ...DEFAULT_SETTINGS },
     tasks,
     notes: [
@@ -111,8 +119,23 @@ async function call(args: string[]): Promise<{ ok: boolean; data?: unknown; erro
 }
 
 async function reload(): Promise<void> {
-  data = previewMode ? previewData() : await invoke<Data>("fe_load");
-  render();
+  const generation = ++reloadGeneration;
+  const revision = dataRevision;
+  try {
+    const next = previewMode ? previewData() : await invoke<Data>("fe_load");
+    if (generation !== reloadGeneration || revision !== dataRevision) return;
+    data = next;
+    hasLoadedData = true;
+    render();
+  } catch (error) {
+    if (generation !== reloadGeneration || revision !== dataRevision) return;
+    console.error("读取 DailyFlow 数据失败", error);
+    if (hasLoadedData) {
+      toast("读取数据失败，请检查数据文件后重试", true);
+    } else {
+      appEl.replaceChildren(el("div", { class: "data-load-error", role: "alert" }, "无法读取 DailyFlow 数据，请检查数据文件后重启应用。"));
+    }
+  }
 }
 
 /** 应用主题：preset CSS + overrides → document；明暗切换 body[data-theme] */
@@ -121,9 +144,41 @@ function applyThemeNow(): void {
   applyTheme(s.theme_preset || "classic-dark", s.theme === "light", s.theme_overrides);
 }
 
+async function persistSettings(patch: Partial<Settings>): Promise<boolean> {
+  const next = normSettings({ ...data.settings, ...patch });
+  const safePatch = "theme_overrides" in patch
+    ? { ...patch, theme_overrides: next.theme_overrides }
+    : patch;
+  try {
+    await invoke("fe_save_settings", { patch: safePatch });
+    data.settings = next;
+    render();
+    return true;
+  } catch {
+    applyThemeNow();
+    render();
+    window.__dailyflow?.toast("设置保存失败，请稍后重试", true);
+    return false;
+  }
+}
+
 function render(): void {
+  const active = document.activeElement;
+  let restoreFocus: { key: string; selection?: [number, number] } | undefined;
+  if (active instanceof HTMLElement && appEl.contains(active) && active.dataset.focusKey) {
+    const selection =
+      active instanceof HTMLTextAreaElement || (active instanceof HTMLInputElement && active.type === "text")
+        ? [active.selectionStart, active.selectionEnd] as const
+        : undefined;
+    restoreFocus = {
+      key: active.dataset.focusKey,
+      ...(selection && selection[0] !== null && selection[1] !== null
+        ? { selection: [selection[0], selection[1]] as [number, number] }
+        : {}),
+    };
+  }
   applyThemeNow();
-  renderApp(appEl, {
+  const opts: RenderOpts = {
     data,
     selectedDate,
     onSelectDate: (d) => {
@@ -131,23 +186,30 @@ function render(): void {
       render();
     },
     onCall: call,
-    onSettings: async (patch) => {
-      data.settings = normSettings({ ...data.settings, ...patch });
-      await invoke("fe_save", { data: { ...data, settings: data.settings } });
-      render();
-    },
+    onSettings: persistSettings,
     onOpenNote: async (note: Note) => {
+      const result = await call(["note", "show", note.id]);
+      if (!result.ok) return;
       await invoke("fe_note_window", { id: note.id, note: note as unknown as Record<string, unknown> });
     },
     onNewNote: async () => {
       const res = await call(["note", "add", "（在这里写下内容）"]);
       if (res.ok) {
         await reload();
-        const notes = (res.data as { note: Note }).note;
-        await invoke("fe_note_window", { id: (res.data as { id: string }).id, note: notes as unknown as Record<string, unknown> });
       }
     },
-  });
+  };
+  currentRenderOpts = opts;
+  renderApp(appEl, opts);
+  if (restoreFocus) {
+    const next = appEl.querySelector<HTMLElement>(`[data-focus-key="${restoreFocus.key}"]`);
+    next?.focus({ preventScroll: true });
+    if (next instanceof HTMLInputElement && restoreFocus.selection) {
+      next.setSelectionRange(...restoreFocus.selection);
+    } else if (next instanceof HTMLTextAreaElement && restoreFocus.selection) {
+      next.setSelectionRange(...restoreFocus.selection);
+    }
+  }
 }
 
 // ---------- 事件 ----------
@@ -162,16 +224,7 @@ window.addEventListener("DOMContentLoaded", () => {
       return data;
     },
     selected: selectedDate,
-    save: async (d: Data) => {
-      data = d;
-      await invoke("fe_save", { data: { ...d } });
-      render();
-    },
-    saveSettings: async (patch: Partial<Settings>) => {
-      data.settings = normSettings({ ...data.settings, ...patch });
-      await invoke("fe_save", { data: { ...data, settings: data.settings } });
-      render();
-    },
+    saveSettings: persistSettings,
     call,
     rerender: render,
     toast,
@@ -188,7 +241,10 @@ window.addEventListener("DOMContentLoaded", () => {
   // rAF 合帧：连续事件（如批量 CLI 操作）只触发一次渲染，且不与浏览器绘制争帧
   let rafPending = false;
   listen("data-changed", async (evt: { payload: unknown }) => {
+    dataRevision += 1;
+    reloadGeneration += 1;
     data = evt.payload as Data;
+    hasLoadedData = true;
     if (!rafPending) {
       rafPending = true;
       requestAnimationFrame(() => {
@@ -196,5 +252,18 @@ window.addEventListener("DOMContentLoaded", () => {
         render();
       });
     }
+  });
+  listen("widget-edit-task", async (evt: { payload: { id: string } }) => {
+    await reload();
+    const task = data.tasks.find((item) => item.id === evt.payload?.id);
+    if (!task || !currentRenderOpts) {
+      toast("找不到这个任务，数据可能已更新", true);
+      return;
+    }
+    if (task.date) {
+      selectedDate = task.date;
+      render();
+    }
+    openTaskEditor(task, currentRenderOpts);
   });
 });

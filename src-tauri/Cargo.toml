@@ -3,6 +3,7 @@ name = "dailyflow"
 version = "0.1.0"
 description = "DailyFlow - AI-driven daily schedule manager"
 authors = ["Skydoge"]
+license = "MIT"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -21,9 +22,15 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-opener = "2"
 tauri-plugin-single-instance = "2"
+tauri-plugin-notification = "2.4"
 chrono = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+fs2 = "0.4"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
 
 [features]
 # 此 feature 让 tauri 以 release 模式嵌入 frontendDist 资产（而非连接 devUrl）。

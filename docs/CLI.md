@@ -1,11 +1,11 @@
 # DailyFlow CLI 参考（AI 必读）
 
 > 本文档面向 **AI agent**。读完即可用 CLI 完成对 DailyFlow 的全部操作，无需任何 GUI。
-> 每条命令输出**单行 JSON**：`{"ok":true,"data":...}` 或 `{"ok":false,"error":"..."}`；exit code 0=成功，1=失败。
+> `dailyflow help` 默认输出便于阅读的分组文本；`dailyflow help --json` 输出机器可读帮助。其他命令输出**单行 JSON**：`{"ok":true,"data":...}` 或 `{"ok":false,"error":"..."}`；exit code 0=成功，1=失败。
 
 ## 0. 可执行文件位置
 
-- 开发调试：`E:\dailytool\dailyflow\src-tauri\target\debug\dailyflow.exe`
+- 开发调试：从仓库根目录运行 `.\src-tauri\target\debug\dailyflow.exe`
 - 发布版：安装后在 PATH 中，直接 `dailyflow <cmd>`
 - 数据文件：`%APPDATA%\com.dailyflow.app\data.json`（可用环境变量 `DAILYFLOW_HOME` 重定向）
 
@@ -24,11 +24,11 @@
 | `goal` | 长期任务 / 目标 | 可选目标日（`--date ""` 可无日期）：常驻「长期目标」区直到完成 |
 
 ```bash
-dailyflow task add "<标题>" [--kind normal|deadline|goal] [--date D] [--start T] [--end T] [--priority low|normal|high] [--tags a,b] [--notes "备注"]
-dailyflow task list [today|week|all|overdue|goal|deadline|open|YYYY-MM-DD|<关键词>] [--tag X]
+dailyflow task add "<标题>" [--kind normal|deadline|goal] [--date D] [--start T] [--end T] [--quadrant q1|q2|q3|q4] [--repeat none|daily|weekly|monthly] [--remind T|off] [--priority low|normal|high] [--tags a,b] [--notes "备注"]
+dailyflow task list [today|week|all|overdue|goal|deadline|q1|q2|q3|q4|open|YYYY-MM-DD|<关键词>] [--tag X]
 dailyflow task goals              # = list goal
 dailyflow task get <id>
-dailyflow task edit <id> [--title S] [--kind K] [--date D] [--start T] [--end T] [--priority P] [--tags A] [--notes S]
+dailyflow task edit <id> [--title S] [--kind K] [--date D] [--start T] [--end T] [--quadrant q1|q2|q3|q4] [--repeat none|daily|weekly|monthly] [--remind T|off] [--priority P] [--tags A] [--notes S]
 dailyflow task done <id>          # 完成
 dailyflow task undone <id>        # 取消完成
 dailyflow task toggle <id>        # 切换
@@ -38,9 +38,14 @@ dailyflow task clear-done [date]  # 清理已完成
 ```
 
 - goal 类型 `--date` 可省略（无目标日）；`task edit <id> --date ""` 可清掉目标日。
+- 设置 `--start` 时默认在该时间提醒；用 `--remind 14:00` 指定提醒时间，`--remind off` 关闭。提醒由运行中的桌面应用发送，关闭应用时不会触发。
+- 改动 `--start` 时，原本与开始时间相同的提醒会随之移动；已关闭或单独设置的提醒保持原样。应用当天晚启动时会补发尚未发送的当天提醒。
+- `--repeat daily|weekly|monthly` 设置重复；完成一次后保留已完成记录并生成下一次。月重复按创建时的日号安排，月底没有该日时使用当月最后一天；逾期完成时跳到下一个未来日期。
+- 取消刚完成的重复任务时，未改动的下一次实例会一并撤回；已编辑或完成的下一次实例会保留。
 - `task list today` 只显示 normal/deadline 中属于今天的任务（长期目标不掺进来，另有 `list goal`）。
 - `day today` 的返回额外带 `goals_open`（进行中的长期目标数），并把这些目标附在 tasks 尾部，方便 AI 一并播报。
 - `task list week` = 今天起 7 天内（不含过去逾期；逾期用 `list overdue`）。
+- 四象限含义：`q1` 重要且紧急、`q2` 重要不紧急、`q3` 不重要但紧急、`q4` 不重要不紧急。旧任务默认 `q2`。
 - `created_at`/`completed_at` 为**本地时间**（无时区后缀），格式 `YYYY-MM-DDTHH:MM:SS`。
 
 ### 桌面便签
@@ -60,9 +65,11 @@ dailyflow note pin <id> on|off    # 置顶
 ```bash
 dailyflow day [date]    # 某天总览：任务列表 + 完成/待办数 + 星期
 dailyflow stats [date]  # 全局统计：总数/完成/逾期/便签数
+dailyflow matrix [date|all]  # 未完成任务的四象限汇总；默认今天，all 表示全部日期
 dailyflow dump          # 完整 data.json（适合 AI 快速了解全部状态）
 dailyflow undo          # 撤销最近一次删除操作（恢复被删除的任务/便签）
-dailyflow help          # 命令速查（JSON）
+dailyflow help          # 命令速查（文本）
+dailyflow help --json   # 机器可读帮助（JSON）
 dailyflow version
 ```
 
@@ -91,8 +98,9 @@ dailyflow theme <preset> --overrides '{"--accent":"#ff5722"}'   # 切换 + 覆�
 
 | 输入 | 含义 |
 |---|---|
-| `today` / `明天` | 今天 / 明天 |
-| `tomorrow` / `昨天` | 明天 / 昨天 |
+| `today` / `今天` | 今天 |
+| `tomorrow` / `明天` | 明天 |
+| `yesterday` / `昨天` | 昨天 |
 | `+3` / `-1` | 3 天后 / 1 天前 |
 | `mon`…`sun` / `周一`…`周日` | 下一个周 X |
 | `2026-09-04` | 指定日期 |
@@ -102,6 +110,8 @@ dailyflow theme <preset> --overrides '{"--accent":"#ff5722"}'   # 切换 + 覆�
 `9` → 09:00 · `930` → 09:30 · `9:30` → 09:30 · `下午3` → 15:00 · `18点` → 18:00
 
 不传 `--start` 的任务 = 全天待办；传了 = 有具体时间的日程。
+
+提醒时间可用相同格式；留空或 `off` 表示不提醒。
 
 ## 3. 典型 AI 工作流
 

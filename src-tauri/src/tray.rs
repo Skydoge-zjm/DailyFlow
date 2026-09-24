@@ -5,16 +5,19 @@ use tauri::{
     AppHandle, Manager,
 };
 
+const IDLE_ICON: &[u8] = include_bytes!("../icons/tray/idle.png");
+const ALERT_ICON: &[u8] = include_bytes!("../icons/tray/alert.png");
+
 /// 根据今日未完成任务数切换托盘图标（alert=有待办橙点 / idle=灰调）
 pub fn update_tray_state(app: &AppHandle, pending_today: usize, overdue: usize) {
     let tray: Option<TrayIcon> = app.tray_by_id("main-tray");
     if let Some(tray) = tray {
-        let icon_path = if pending_today > 0 || overdue > 0 {
-            "icons/tray/alert.png"
+        let icon_bytes = if pending_today > 0 || overdue > 0 {
+            ALERT_ICON
         } else {
-            "icons/tray/idle.png"
+            IDLE_ICON
         };
-        if let Ok(img) = tauri::image::Image::from_path(icon_path) {
+        if let Ok(img) = tauri::image::Image::from_bytes(icon_bytes) {
             let _ = tray.set_icon(Some(img));
         }
         let tip = match (pending_today, overdue) {
@@ -34,22 +37,26 @@ pub fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     let new_note = MenuItem::with_id(app, "new_note", "新建便签", true, None::<&str>)?;
 
     // 便签子菜单：显示/隐藏全部 + 各便签单独开关
-    let note_all_show = MenuItem::with_id(app, "note_all_show", "显示全部便签", true, None::<&str>)?;
-    let note_all_hide = MenuItem::with_id(app, "note_all_hide", "隐藏全部便签", true, None::<&str>)?;
-    let submenu_items: Vec<&dyn tauri::menu::IsMenuItem<_>> =
-        vec![&note_all_show, &note_all_hide];
+    let note_all_show =
+        MenuItem::with_id(app, "note_all_show", "显示全部便签", true, None::<&str>)?;
+    let note_all_hide =
+        MenuItem::with_id(app, "note_all_hide", "隐藏全部便签", true, None::<&str>)?;
+    let submenu_items: Vec<&dyn tauri::menu::IsMenuItem<_>> = vec![&note_all_show, &note_all_hide];
     let note_menu = Submenu::with_id_and_items(app, "notes-sub", "便签", true, &submenu_items)?;
 
     let sep1 = PredefinedMenuItem::separator(app)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "退出 DailyFlow", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &sep1, &widget, &note_menu, &new_note, &sep2, &quit])?;
+    let menu = Menu::with_items(
+        app,
+        &[&show, &sep1, &widget, &note_menu, &new_note, &sep2, &quit],
+    )?;
 
     let mut tray = TrayIconBuilder::with_id("main-tray")
         .menu(&menu)
         .show_menu_on_left_click(true)
         .tooltip("DailyFlow - AI 日程管理");
-    if let Ok(img) = tauri::image::Image::from_path("icons/tray/idle.png") {
+    if let Ok(img) = tauri::image::Image::from_bytes(IDLE_ICON) {
         tray = tray.icon(img);
     } else if let Some(icon) = app.default_window_icon() {
         tray = tray.icon(icon.to_owned());
@@ -77,12 +84,19 @@ pub fn on_tray_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
             let c = crate::domain::Ctx {
                 store: crate::store::Store::new(crate::app_paths()),
             };
-            let visible = c.store.load().settings.widget_visible;
-            let _ = c.widget_show(!visible);
-            if !visible {
-                let _ = crate::windows::open_widget_window(app);
-            } else {
-                crate::windows::close_widget_window(app);
+            let visible = match c.store.load() {
+                Ok(data) => data.settings.widget_visible,
+                Err(error) => {
+                    eprintln!("读取悬浮窗状态失败: {}", error);
+                    return;
+                }
+            };
+            if c.widget_show(!visible).is_ok() {
+                if !visible {
+                    let _ = crate::windows::open_widget_window(app);
+                } else {
+                    crate::windows::close_widget_window(app);
+                }
             }
         }
         "new_note" => {
@@ -93,7 +107,8 @@ pub fn on_tray_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
             if let Ok(v) = c.note_add(&body, "", "") {
                 if let Some(note) = v["note"].as_object() {
                     let val = serde_json::Value::Object(note.clone());
-                    let _ = crate::windows::open_note_window(app, &v["id"].as_str().unwrap_or(""), &val);
+                    let _ =
+                        crate::windows::open_note_window(app, v["id"].as_str().unwrap_or(""), &val);
                 }
             }
         }
@@ -102,18 +117,21 @@ pub fn on_tray_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
             let c = crate::domain::Ctx {
                 store: crate::store::Store::new(crate::app_paths()),
             };
-            let mut d = c.store.load();
-            for n in &mut d.notes {
-                n.visible = show;
-                n.updated_at = crate::timeparse::now_iso();
-            }
-            let _ = c.store.save(&d);
-            let v = serde_json::to_value(&d).unwrap_or(serde_json::json!({}));
-            use tauri::Emitter;
-            let _ = app.emit("data-changed", &v);
-            crate::windows::sync_note_windows(app, &v);
-            if show {
-                crate::windows::open_visible_notes(app, &v);
+            let updated = c.store.with_lock(2000, |data| {
+                for note in &mut data.notes {
+                    note.visible = show;
+                    note.updated_at = crate::timeparse::now_iso();
+                }
+                Ok(data.clone())
+            });
+            if let Ok(data) = updated {
+                let value = serde_json::to_value(&data).unwrap_or(serde_json::json!({}));
+                use tauri::Emitter;
+                let _ = app.emit("data-changed", &value);
+                crate::windows::sync_note_windows(app, &value);
+                if show {
+                    crate::windows::open_visible_notes(app, &value);
+                }
             }
         }
         "quit" => {

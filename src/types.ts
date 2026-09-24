@@ -1,5 +1,7 @@
 export type Priority = "low" | "normal" | "high";
 export type TaskKind = "normal" | "deadline" | "goal";
+export type RepeatRule = "none" | "daily" | "weekly" | "monthly";
+export type Quadrant = "q1" | "q2" | "q3" | "q4";
 
 export interface Task {
   id: string;
@@ -11,6 +13,12 @@ export interface Task {
   done: boolean;
   priority: Priority;
   kind: TaskKind;
+  quadrant: Quadrant;
+  repeat: RepeatRule;
+  repeat_day?: number | null;
+  repeat_parent_id?: string | null;
+  remind_at?: string | null;
+  reminded_at?: string | null;
   tags: string[];
   created_at: string;
   completed_at: string | null;
@@ -23,6 +31,7 @@ export interface Note {
   color: string;
   x: number;
   y: number;
+  monitor?: string;
   w: number;
   h: number;
   pinned: boolean;
@@ -41,6 +50,9 @@ export interface Settings {
   widget_pinned: boolean;
   widget_x: number;
   widget_y: number;
+  widget_w: number;
+  widget_h: number;
+  widget_monitor: string;
 }
 
 export interface Data {

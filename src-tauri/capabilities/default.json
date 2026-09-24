@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for main window and sticky note windows",
-  "windows": ["main", "note-*"],
+  "description": "Capability for main, widget, and sticky note windows",
+  "windows": ["main", "note-*", "widget-today"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
@@ -11,6 +11,7 @@
     "core:window:allow-outer-position",
     "core:window:allow-outer-size",
     "core:window:allow-scale-factor",
+    "core:window:allow-current-monitor",
     "core:window:allow-set-always-on-top",
     "core:window:allow-show",
     "core:window:allow-hide",
@@ -18,6 +19,7 @@
     "core:window:allow-set-focus",
     "core:window:allow-unminimize",
     "core:event:default",
+    "notification:default",
     "opener:default"
   ]
 }

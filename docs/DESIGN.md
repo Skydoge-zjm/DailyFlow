@@ -4,14 +4,14 @@
 
 ## 1. 核心理念
 
-**AI 通过 CLI 驱动一切。** 应用把「任意人类操作」都暴露为 CLI 命令：
+**AI 可以通过 CLI 管理日程数据。** 任务、便签内容和主要显示开关可由 CLI 操作；窗口拖动、缩放等桌面交互仍由 GUI 完成：
 
-- 人在界面上能做的事（增删改任务、拖动便签、打标签、查看统计），CLI 都有对应命令。
+- 任务和便签的增删改、标签、统计等操作都有对应 CLI 命令。
 - AI（如 Claude / ChatGPT 的 agent）拿到 `CLI.md` 后，不依赖任何私有 API，直接用 `dailyflow.exe <cmd>` 完成所有操作。
-- CLI 与 GUI 共享同一份数据文件，GUI 实时刷新展示 CLI 造成的变更（通过文件监听）。
+- CLI 与 GUI 共享同一份数据文件；GUI 轮询文件变更并刷新外部修改。
 
 ```
-┌──────────────┐   CLI 调用    ┌────────────────┐   文件监听    ┌──────────────┐
+┌──────────────┐   CLI 调用    ┌────────────────┐   变更轮询    ┌──────────────┐
 │   AI Agent   │ ───────────▶ │  dailyflow.exe │             │              │
 │ (Claude 等)  │              │  (CLI / headless)            │   GUI 窗口   │
 └──────────────┘              └───────┬────────┘             │  (主窗口 +   │
@@ -19,7 +19,7 @@
                                       ▼                      └──────▲───────┘
                               ┌────────────────┐   事件通知     │
                               │   data.json    │ ──────────────┘
-                              │  (唯一数据源)   │  (tauri 文件监听)
+                              │  (唯一数据源)   │  (约 800ms 轮询)
                               └────────────────┘
 ```
 
@@ -35,7 +35,7 @@
 
 ## 3. 数据模型（`data.json`）
 
-存放位置：`%APPDATA%/com.dailyflow.app/data.json`（Tauri app_data_dir）。
+存放位置：`%APPDATA%/com.dailyflow.app/data.json`。v1 数据加载时迁移到 v2。文件包含 schema 版本；不支持的版本或未知字段会被拒绝读取以保护数据。新增字段时必须递增版本并实现迁移。
 
 ```jsonc
 {
@@ -46,6 +46,12 @@
       "title": "写周报",
       "notes": "",                    // 补充说明
       "kind": "normal",               // 任务类型：normal 短期待办 | deadline 截止任务 | goal 长期目标
+      "quadrant": "q2",               // q1 重要且紧急 | q2 重要不紧急 | q3 不重要但紧急 | q4 不重要不紧急
+      "repeat": "none",               // none | daily | weekly | monthly；完成后生成下一次
+      "repeat_day": null,              // 月重复锚定日（如 31 日；短月使用月末）
+      "repeat_parent_id": null,        // 自动生成的下一次实例指向上一次任务 ID
+      "remind_at": "09:30",            // 可选，本地提醒时间；默认跟随 start
+      "reminded_at": null,             // 当天已提醒时间，避免重复通知
       "date": "2026-09-04",          // normal=归属日；deadline=截止日；goal=可选目标日（""=无）
       "start": "09:30",              // 可选，HH:MM
       "end": "10:00",                // 可选
@@ -91,46 +97,11 @@
 
 ## 4. CLI 协议（AI 的操作面）
 
-统一形式：`dailyflow.exe <command> [args] [--flags]`
+统一形式：`dailyflow.exe <command> [args] [--flags]`。完整命令清单、参数、返回格式和工作流示例统一维护在 [`CLI.md`](CLI.md)，避免重复清单与实际 CLI 分叉。
 
-- 所有命令输出 **JSON 一行**（`{"ok":true,...}` / `{"ok":false,"error":"..."}`），AI 解析稳定。
-- exit code：成功 0，失败 1。
-- 时间参数宽松：`today` / `tomorrow` / `+1` / `mon` / `2026-09-04` 均可，由 Rust 解析。
-- 启动分流：带参数 → CLI 模式；无参数（双击/开始菜单）→ 启动 GUI；显式 `dailyflow gui` 从任意上下文启动图形界面。
-
-### 命令清单（覆盖全部人类操作）
-
-```
-# 任务/日程
-task add <title> [--date today|YYYY-MM-DD] [--start HH:MM] [--end HH:MM]
-          [--priority low|normal|high] [--tags a,b] [--notes "..."]
-task list [date|today|week|all] [--tag x] [--json]
-task get <id>
-task edit <id> [--title s] [--date d] [--start t] [--end t] [--notes s]
-          [--priority p] [--tags a,b]         # tags 传空串清空
-task done <id> | task undone <id> | task toggle <id>
-task delete <id>
-task move <id> <date>                     # 改期
-task today                                # = list today
-task clear-done [date]                    # 清理已完成
-
-# 便签
-note add <body> [--title t] [--color c]
-note list [--json]
-note edit <id> [--title t] [--body s] [--color c]
-note delete <id>
-note show <id> | note hide <id>           # 显示/隐藏便签窗口
-note pin <id> on|off                      # 置顶
-
-# 通用
-day [date]                                # 某天总览（任务+统计）
-stats [date]                              # 统计：完成率等
-undo                                      # 撤销最近一次删除（单级）
-widget show|hide | widget pin on|off      # 今日悬浮窗控制
-theme <preset> [--light] [--overrides JSON]
-help                                      # 命令速查（AI 入口）
-version
-```
+- 所有命令输出单行 JSON；成功退出码为 0，失败为 1。
+- 日期与时间支持 `today`、`tomorrow`、`+1`、`mon` 和 `YYYY-MM-DD` 等格式，由 Rust 解析。
+- 带参数启动进入 CLI；无参数启动 GUI；显式 `dailyflow gui` 启动图形界面。
 
 ### AI 工作流示例
 
@@ -171,23 +142,25 @@ dailyflow.exe day today
 
 ```
 src-tauri/src/
-├── main.rs            # 入口（dev 下区分 CLI 模式）
-├── lib.rs             # run()：CLI 分流 or Tauri 启动
-├── cli.rs             # 参数解析 + 命令分发 + JSON 输出
-├── store.rs           # data.json 加载/原子保存/备份/文件监听句柄
+├── main.rs            # 进程入口
+├── lib.rs             # CLI 分流、Tauri 生命周期和后台任务
+├── cli.rs             # 参数校验、命令分发和 JSON 输出
+├── domain.rs          # 任务、便签、提醒、统计和撤销规则
+├── store.rs           # 跨进程锁、JSON 加载、原子保存和备份
 ├── model.rs           # Task / Note / Settings / Data + serde
-├── timeparse.rs       # 宽松时间解析（today/tomorrow/+1/mon/YYYY-MM-DD）
+├── timeparse.rs       # 日期、时间和本地时间格式化
 ├── commands.rs        # Tauri commands（前端 ↔ 后端）
+├── windows.rs         # 悬浮窗和便签窗口
 └── tray.rs            # 托盘菜单与事件
 ```
 
 **CLI 模式判定**：程序带参数启动 → 走 CLI（不创建任何窗口，秒进秒出）；无参数 → 启动 GUI；`gui` 子命令显式启动 GUI。注意：Tauri 打包的 exe 直接跑子命令即可，无需额外二进制。
 
-**GUI 实时性**：GUI 启动时记录 data.json 的 mtime，`tokio` 间隔 800ms 轮询 mtime（比文件监听 API 简单可靠，Windows 上 crossbeam/notify 均有坑），变化则重载并经 `emit` 推给所有窗口。
+**GUI 实时性**：后台线程每 800ms 检查 `data.json` 的修改时间；变化时重载数据并通过 Tauri 事件通知窗口。存储写入使用跨进程文件锁，避免 CLI 和 GUI 的并发读改写相互覆盖。
 
 ## 7. 里程碑
 
 1. **M1** 数据层 + CLI 全命令（headless 可独立验收）✅ 本仓库首要交付
-2. **M2** 主窗口 UI（今日视图 + 周历 + 快速添加）
-3. **M3** 便签窗口 + 托盘
-4. **M4** 打磨：主题切换、动画、开机自启
+2. **M2** 主窗口 UI（今日视图 + 周历 + 快速添加）✅
+3. **M3** 便签窗口 + 托盘 ✅
+4. **M4** 打磨：主题切换与动画 ✅；开机自启未实现

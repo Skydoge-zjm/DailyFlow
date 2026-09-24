@@ -1,64 +1,87 @@
 # DailyFlow
 
-> AI 驱动的每日日程管理工具 —— Windows 桌面应用 · 常驻桌面便签 · 供 AI 调用的完整 CLI
+> 让今天的安排清楚可见。
 
-**核心理念**：人能做的每个操作都有对应的 CLI 命令，AI（如 Claude）读完 [`docs/CLI.md`](docs/CLI.md) 后即可通过命令行完成一切 —— 增删任务、安排日程、写便签、查统计；GUI 实时同步显示。
+DailyFlow 是一款面向 Windows 的本地优先日程工作台。把任务、日程、截止事项和长期目标放进一处管理，再用桌面悬浮窗把今天留在眼前。GUI 服务日常规划，CLI 则让脚本和 AI 助手也能读写同一份数据。
 
+![DailyFlow 主界面（示例数据）](docs/images/dailyflow-main.png)
+
+**Windows 桌面应用 · Rust + Tauri 2 · TypeScript + Vite · MIT License**
+
+## 从捕捉到完成
+
+- **今天一目了然**：按时间浏览今日日程和待办，查看完成进度、截止任务与长期目标。
+- **快速记下新任务**：从主窗口或悬浮窗添加任务；支持优先级、标签、备注和四象限。
+- **重要事项不再错过**：设置提醒，或让重复任务在完成后生成下一次计划。
+- **临时想法有处安放**：创建多张桌面便签，自由拖动、缩放、置顶并选择颜色。
+- **保持桌面轻盈**：通过系统托盘唤起窗口、切换今日悬浮窗或管理便签。
+- **界面按习惯调整**：使用内置主题，也可逐项自定义颜色、圆角等外观变量并导入导出主题 JSON。
+
+## 今日悬浮窗
+
+悬浮窗常驻桌面，集中显示今天的任务、日程、临近截止事项和目标；可置顶、拖动、缩放，也能直接完成任务或快速添加。
+
+![DailyFlow 今日悬浮窗（示例数据）](docs/images/dailyflow-widget.png)
+
+## 为脚本和 AI 助手准备
+
+DailyFlow CLI 与 GUI 共用本地数据文件。任务、便签、查询、统计和常用窗口开关都可通过命令行操作；窗口拖动和缩放等桌面交互仍在 GUI 中完成。数据命令返回单行 JSON；`dailyflow help` 默认输出可读文本，也可用 `dailyflow help --json` 获取机器可读帮助。
+
+首次从终端或 AI 助手调用前，请在主界面“设置”中检测 PATH 并一键添加 DailyFlow 路径。
+
+```powershell
+dailyflow task add "团队周会" --date tomorrow --start 10:00 --end 11:00 --tags 工作
+dailyflow day today
+dailyflow note add "确认演示流程" --title "发布清单" --color blue
 ```
-AI Agent ──▶ dailyflow.exe task add "周会" --start 10:00
-                    │
-                    ▼
-              data.json（唯一数据源）
-                    │ 文件监听（~1s）
-                    ▼
-        主窗口 · 桌面便签 实时刷新
-```
 
-## 功能
+完整命令、参数、返回格式和 AI 工作流示例见 [CLI 参考](docs/CLI.md)。
 
-- ✅ **两个图形界面**：主窗口（计划管理）+ 常驻桌面悬浮窗（今日待办，输入法风格、可置顶、可拖拽）
-- ✅ **任务/日程统一管理**：有时间为日程，无时间为待办；优先级、标签、备注、改期
-- ✅ **桌面便签**：无边框半透明彩色便签窗口，可拖拽/缩放/置顶，位置自动记忆
-- ✅ **系统托盘**：常驻后台，快速新建便签、切换悬浮窗、唤起主窗口
-- ✅ **多主题 + 自定义外观**：5 个内置主题（经典深浅/精致留白/玻璃拟态/暖色手账），🎨 面板可逐变量调色实时预览，主题可导出/导入 JSON
-- ✅ **完整 CLI**：`dailyflow task/note/widget/day/stats/...` 全部操作可脚本化，宽松的中英文日期/时间解析
-- ✅ **实时同步**：CLI 与 GUI 双向实时同步（文件监听）
-- ✅ **数据安全**：原子写入 + 自动滚动备份（`backups/` 保留 10 份）
+### 安装 Skill
 
-### 界面一览
+仓库内附带 [`dailyflow-cli` Skill](skills/dailyflow-cli/SKILL.md)，说明 AI 助手如何通过 CLI 查询和管理任务、日程与便签。将 `skills/dailyflow-cli` 目录安装到所用 AI 助手支持的 Skill 路径即可使用；本机还需安装 DailyFlow 并配置好 `PATH`。
 
-1. **主窗口** —— 今日日程时间线、周历切换日期、快速添加、完成率进度环、便签管理
-2. **今日悬浮窗** —— 右上角常驻小窗，紧凑列出今日待办/日程，可勾选完成、`9:30 开会` 回车快速添加；📌 置顶开关（默认开，像输入法悬浮窗一样压在所有窗口上）、⤢ 唤起主窗口、✕ 隐藏（托盘可找回）
-3. **桌面便签** —— 多张彩色便签自由摆放
+## 安装与开发
 
-## 技术栈
+### 从源码运行
 
-Tauri 2（Rust）+ 原生 TypeScript + Vite，无前端框架，安装包约 3-5MB。
+需要 Node.js、Rust stable、Windows C++ Build Tools 和 WebView2 Runtime。
 
-## 开发
-
-```bash
+```powershell
 npm install
-npm run tauri dev     # 开发模式（带热重载）
-
-cargo build --manifest-path src-tauri/Cargo.toml   # 仅构建（可先测 CLI）
+npm run tauri dev
 ```
 
-构建 CLI 可独立验证（无需 GUI）：
+### 构建安装包
 
-```bash
-export DAILYFLOW_HOME=/tmp/df-test   # 可选：重定向数据目录
-./src-tauri/target/debug/dailyflow.exe task add "测试任务"
-./src-tauri/target/debug/dailyflow.exe day today
+```powershell
+npm run tauri build
 ```
 
-打包：`npm run tauri build`
+Tauri 会在 `src-tauri/target/release/bundle/` 下生成适用于当前构建平台的安装包。
 
-## 文档
+### 单独使用 CLI
 
-- [设计文档](docs/DESIGN.md) —— 架构、数据模型、GUI 设计
-- [CLI 参考（AI 必读）](docs/CLI.md) —— 全部命令与 AI 工作流示例
+从仓库根目录构建并运行：
 
-## 数据
+```powershell
+cargo build --manifest-path src-tauri/Cargo.toml
+.\src-tauri\target\debug\dailyflow.exe help
+```
 
-所有数据存于 `%APPDATA%\com.dailyflow.app\data.json`，纯 JSON、无锁库，AI 可直接 `dump` 读取全量状态。
+开发时可通过 `DAILYFLOW_HOME` 将数据目录指向临时位置：
+
+```powershell
+$env:DAILYFLOW_HOME = "$env:TEMP\dailyflow-demo"
+.\src-tauri\target\debug\dailyflow.exe task add "测试任务"
+```
+
+## 数据与隐私
+
+任务、便签和设置保存在 `%APPDATA%\com.dailyflow.app\data.json`，使用本地 JSON 文件、跨进程文件锁和滚动备份，不需要云端账号。`DAILYFLOW_HOME` 可重定向数据目录。
+
+数据文件包含 schema 版本：v1 数据会迁移到 v2；损坏数据、未知字段或不支持的版本会被报告并保留原文件。数据模型与同步机制见[设计文档](docs/DESIGN.md)。
+
+## 许可证
+
+[MIT License](LICENSE)

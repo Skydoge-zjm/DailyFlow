@@ -1,7 +1,18 @@
-use std::fs;
+use fs2::FileExt;
+use std::fs::{self, File, OpenOptions};
 use std::path::{Path, PathBuf};
 
-use crate::model::Data;
+use crate::model::{Data, DATA_VERSION};
+
+struct FileLock {
+    file: File,
+}
+
+impl Drop for FileLock {
+    fn drop(&mut self) {
+        let _ = FileExt::unlock(&self.file);
+    }
+}
 
 pub struct Store {
     pub path: PathBuf,
@@ -17,62 +28,113 @@ impl Store {
         }
     }
 
-    pub fn load(&self) -> Data {
-        match fs::read_to_string(&self.path) {
-            Ok(raw) => match serde_json::from_str::<Data>(&raw) {
-                Ok(data) => data,
-                Err(e) => {
-                    eprintln!("warn: data.json parse failed ({}), backup kept, starting fresh", e);
-                    let _ = self.backup_corrupt(&raw);
-                    Data::default()
+    fn load_inner(&self) -> Result<(Data, bool), String> {
+        let raw = match fs::read_to_string(&self.path) {
+            Ok(raw) => raw,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok((Data::default(), false));
+            }
+            Err(error) => return Err(format!("读取数据文件失败: {}", error)),
+        };
+        let mut data = match serde_json::from_str::<Data>(&raw) {
+            Ok(data) => data,
+            Err(error) => {
+                if let Err(backup_error) = self.backup_corrupt(&raw) {
+                    eprintln!("备份损坏的数据文件失败: {}", backup_error);
                 }
-            },
-            Err(_) => Data::default(),
-        }
+                return Err(format!("data.json 解析失败，原文件已保留: {}", error));
+            }
+        };
+        let migrated = if data.version == 1 {
+            data.version = DATA_VERSION;
+            true
+        } else if data.version != DATA_VERSION {
+            return Err(format!(
+                "数据版本 {} 不受当前版本 {} 支持；原文件已保留",
+                data.version, DATA_VERSION
+            ));
+        } else {
+            false
+        };
+        Ok((data, migrated))
     }
 
-    /// 带文件锁的读-改-写：锁内执行 `f(data)`，返回其结果。
-    /// 防止 CLI 与 GUI 并发 load-modify-save 互相覆盖（前者的修改会被后者盖掉）。
+    pub fn load(&self) -> Result<Data, String> {
+        let (data, migrated) = self.load_inner()?;
+        if !migrated {
+            return Ok(data);
+        }
+        let _lock = self.acquire_lock(2000)?;
+        let (latest, needs_persist) = self.load_inner()?;
+        if needs_persist {
+            self.save_unlocked(&latest)?;
+        }
+        Ok(latest)
+    }
+
+    /// 带文件锁的读-改-写。数据变更和原子落盘都在锁内完成。
     pub fn with_lock<T>(
         &self,
         timeout_ms: u64,
         f: impl FnOnce(&mut Data) -> Result<T, String>,
     ) -> Result<T, String> {
-        let lock_path = self.path.with_extension("lock");
-        let start = std::time::Instant::now();
-        loop {
-            match fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&lock_path)
-            {
-                Ok(_) => break,
-                Err(_) if start.elapsed().as_millis() < timeout_ms as u128 => {
-                    std::thread::sleep(std::time::Duration::from_millis(10));
-                }
-                Err(e) => return Err(format!("获取数据锁超时（另一进程可能正在写入）: {}", e)),
-            }
-        }
-        let mut data = self.load();
+        let _lock = self.acquire_lock(timeout_ms)?;
+        let (mut data, migrated) = self.load_inner()?;
         let result = f(&mut data);
-        // 无论操作成败都释放锁；操作成功才落盘
-        let _ = fs::remove_file(&lock_path);
-        if result.is_ok() {
-            self.save(&data)?;
+        if result.is_ok() || migrated {
+            self.save_unlocked(&data)?;
         }
         result
     }
 
-    /// 原子写：先写临时文件，再 rename 覆盖；写前滚动备份。
+    fn acquire_lock(&self, timeout_ms: u64) -> Result<FileLock, String> {
+        let start = std::time::Instant::now();
+        let lock_path = self.path.with_extension("lock");
+        if let Some(parent) = lock_path.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("创建数据目录失败: {}", e))?;
+        }
+        let file = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&lock_path)
+            .map_err(|e| format!("打开数据锁失败: {}", e))?;
+        loop {
+            match FileExt::try_lock_exclusive(&file) {
+                Ok(()) => return Ok(FileLock { file }),
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    if start.elapsed().as_millis() >= timeout_ms as u128 {
+                        return Err("获取数据锁超时（另一进程可能正在写入）".into());
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Err(error) => return Err(format!("获取数据锁失败: {}", error)),
+            }
+        }
+    }
+
+    /// 原子写：锁内先写临时文件，再 rename 覆盖；写前滚动备份。
+    #[allow(dead_code)]
     pub fn save(&self, data: &Data) -> Result<(), String> {
+        if data.version != DATA_VERSION {
+            return Err(format!(
+                "不能保存数据版本 {}；当前版本为 {}",
+                data.version, DATA_VERSION
+            ));
+        }
+        let _lock = self.acquire_lock(2000)?;
+        self.save_unlocked(data)
+    }
+
+    fn save_unlocked(&self, data: &Data) -> Result<(), String> {
         if self.path.exists() {
             self.backup()?;
         }
         let json = serde_json::to_string_pretty(data).map_err(|e| e.to_string())?;
         let tmp = self.path.with_extension("json.tmp");
         fs::write(&tmp, json).map_err(|e| e.to_string())?;
-        // Windows 的 std::fs::rename 支持原子覆盖已存在文件；
-        // 旧实现先 remove 再 rename，中间有窗口让并发读者读到"文件不存在"而误判为空数据
+        // Windows 上直接 rename 覆盖，避免先删除目标文件导致读者误判为空数据。
         fs::rename(&tmp, &self.path).map_err(|e| e.to_string())?;
         Ok(())
     }
@@ -179,5 +241,97 @@ fn same_file_contents(a: &Path, b: &Path) -> bool {
     match (fs::read(a), fs::read(b)) {
         (Ok(x), Ok(y)) => x == y,
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{Priority, Task, TaskKind};
+
+    fn temp_store_dir() -> PathBuf {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        std::env::temp_dir().join(format!("dailyflow-store-{}-{}", std::process::id(), nonce))
+    }
+
+    fn test_task(id: usize) -> Task {
+        Task {
+            id: format!("t_{}", id),
+            title: format!("task {}", id),
+            notes: String::new(),
+            date: "2026-09-23".into(),
+            start: None,
+            end: None,
+            done: false,
+            priority: Priority::Normal,
+            kind: TaskKind::Normal,
+            quadrant: crate::model::Quadrant::Q2,
+            repeat: crate::model::RepeatRule::None,
+            repeat_day: None,
+            repeat_parent_id: None,
+            remind_at: None,
+            reminded_at: None,
+            tags: Vec::new(),
+            created_at: String::new(),
+            completed_at: None,
+        }
+    }
+
+    #[test]
+    fn concurrent_updates_keep_every_change() {
+        let dir = temp_store_dir();
+        let workers = 8;
+        let updates_per_worker = 12;
+        let mut threads = Vec::new();
+
+        for worker in 0..workers {
+            let path = dir.clone();
+            threads.push(std::thread::spawn(move || {
+                let store = Store::new(path);
+                for update in 0..updates_per_worker {
+                    let id = worker * updates_per_worker + update;
+                    store
+                        .with_lock(5000, |data| {
+                            data.tasks.push(test_task(id));
+                            Ok(())
+                        })
+                        .unwrap();
+                }
+            }));
+        }
+
+        for thread in threads {
+            thread.join().unwrap();
+        }
+
+        let store = Store::new(dir.clone());
+        assert_eq!(
+            store.load().unwrap().tasks.len(),
+            workers * updates_per_worker
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn failed_update_does_not_write_or_leave_lock() {
+        let dir = temp_store_dir();
+        let store = Store::new(dir.clone());
+        let result = store.with_lock::<()>(100, |data| {
+            data.tasks.push(test_task(1));
+            Err("abort".into())
+        });
+
+        assert!(result.is_err());
+        assert!(store.load().unwrap().tasks.is_empty());
+        let lock_file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(store.path.with_extension("lock"))
+            .unwrap();
+        assert!(FileExt::try_lock_exclusive(&lock_file).is_ok());
+        fs::remove_dir_all(dir).unwrap();
     }
 }

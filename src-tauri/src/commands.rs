@@ -4,6 +4,44 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::domain::Ctx;
 use crate::store::Store;
 
+fn optional_string<'a>(patch: &'a Value, key: &str) -> Result<Option<&'a str>, String> {
+    match patch.get(key) {
+        None => Ok(None),
+        Some(Value::String(value)) => Ok(Some(value)),
+        Some(_) => Err(format!("{} 必须是字符串", key)),
+    }
+}
+
+fn optional_bool(patch: &Value, key: &str) -> Result<Option<bool>, String> {
+    match patch.get(key) {
+        None => Ok(None),
+        Some(Value::Bool(value)) => Ok(Some(*value)),
+        Some(_) => Err(format!("{} 必须是布尔值", key)),
+    }
+}
+
+fn optional_f64(patch: &Value, key: &str) -> Result<Option<f64>, String> {
+    match patch.get(key) {
+        None => Ok(None),
+        Some(Value::Number(value)) => value
+            .as_f64()
+            .map(Some)
+            .ok_or_else(|| format!("{} 必须是数字", key)),
+        Some(_) => Err(format!("{} 必须是数字", key)),
+    }
+}
+
+fn optional_i64(patch: &Value, key: &str) -> Result<Option<i64>, String> {
+    match patch.get(key) {
+        None => Ok(None),
+        Some(Value::Number(value)) => value
+            .as_i64()
+            .map(Some)
+            .ok_or_else(|| format!("{} 必须是整数", key)),
+        Some(_) => Err(format!("{} 必须是整数", key)),
+    }
+}
+
 fn ctx(_handle: &AppHandle) -> Ctx {
     Ctx {
         store: Store::new(crate::app_paths()),
@@ -13,23 +51,109 @@ fn ctx(_handle: &AppHandle) -> Ctx {
 // ---------- 前端调用的命令 ----------
 
 #[tauri::command]
-pub fn fe_load() -> Value {
-    let c = ctx_handle();
-    serde_json::json!(c.store.load())
-}
-
-fn ctx_handle() -> Ctx {
-    Ctx {
-        store: Store::new(crate::app_paths()),
-    }
+pub fn fe_cli_path_status() -> Result<crate::cli_path::CliPathStatus, String> {
+    crate::cli_path::status()
 }
 
 #[tauri::command]
-pub fn fe_save(data: Value) -> Result<(), String> {
-    let parsed: crate::model::Data =
-        serde_json::from_value(data).map_err(|e| format!("数据格式错误: {}", e))?;
-    let c = ctx_handle();
-    c.store.save(&parsed)
+pub fn fe_cli_path_add() -> Result<crate::cli_path::CliPathStatus, String> {
+    crate::cli_path::add_to_user_path()
+}
+
+#[tauri::command]
+pub fn fe_load() -> Result<crate::model::Data, String> {
+    let c = Ctx {
+        store: Store::new(crate::app_paths()),
+    };
+    c.store.load()
+}
+
+/// 合并保存设置字段，避免前端携带的旧整份 Data 覆盖其他窗口刚保存的任务或便签。
+#[tauri::command]
+pub fn fe_save_settings(app: AppHandle, patch: Value) -> Result<(), String> {
+    let c = ctx(&app);
+    let patch_object = patch
+        .as_object()
+        .ok_or_else(|| "设置 patch 必须是对象".to_string())?;
+    const ALLOWED_FIELDS: &[&str] = &[
+        "theme",
+        "theme_preset",
+        "theme_overrides",
+        "sticky_opacity",
+        "autostart",
+        "widget_visible",
+        "widget_pinned",
+        "widget_x",
+        "widget_y",
+    ];
+    if let Some(unknown) = patch_object
+        .keys()
+        .find(|key| !ALLOWED_FIELDS.contains(&key.as_str()))
+    {
+        return Err(format!("未知设置字段: {}", unknown));
+    }
+    let before = serde_json::to_value(c.store.load()?).map_err(|e| e.to_string())?;
+    c.store.with_lock(2000, |data| {
+        if let Some(theme) = optional_string(&patch, "theme")? {
+            data.settings.theme = match theme {
+                "dark" => crate::model::Theme::Dark,
+                "light" => crate::model::Theme::Light,
+                "auto" => crate::model::Theme::Auto,
+                other => return Err(format!("无效主题模式: {}", other)),
+            };
+        }
+        if let Some(preset) = optional_string(&patch, "theme_preset")? {
+            if !crate::model::THEME_PRESETS.contains(&preset) {
+                return Err(format!("无效主题预设: {}", preset));
+            }
+            data.settings.theme_preset = preset.to_string();
+        }
+        if let Some(overrides) = patch.get("theme_overrides") {
+            let map = overrides
+                .as_object()
+                .ok_or_else(|| "theme_overrides 必须是对象".to_string())?;
+            let mut parsed = std::collections::BTreeMap::new();
+            for (key, value) in map {
+                let value = value
+                    .as_str()
+                    .ok_or_else(|| format!("主题变量 {} 的值必须是字符串", key))?;
+                if !key.starts_with("--") {
+                    return Err(format!("无效 CSS 变量名: {}", key));
+                }
+                parsed.insert(key.clone(), value.to_string());
+            }
+            crate::model::validate_theme_overrides(&parsed)?;
+            data.settings.theme_overrides = parsed;
+        }
+        if let Some(opacity) = optional_f64(&patch, "sticky_opacity")? {
+            if !(0.0..=1.0).contains(&opacity) {
+                return Err("sticky_opacity 必须在 0 到 1 之间".into());
+            }
+            data.settings.sticky_opacity = opacity;
+        }
+        if let Some(value) = optional_bool(&patch, "autostart")? {
+            data.settings.autostart = value;
+        }
+        if let Some(value) = optional_bool(&patch, "widget_visible")? {
+            data.settings.widget_visible = value;
+        }
+        if let Some(value) = optional_bool(&patch, "widget_pinned")? {
+            data.settings.widget_pinned = value;
+        }
+        if let Some(value) = optional_i64(&patch, "widget_x")? {
+            data.settings.widget_x =
+                i32::try_from(value).map_err(|_| "widget_x 超出范围".to_string())?;
+        }
+        if let Some(value) = optional_i64(&patch, "widget_y")? {
+            data.settings.widget_y =
+                i32::try_from(value).map_err(|_| "widget_y 超出范围".to_string())?;
+        }
+        Ok(())
+    })?;
+    let after = serde_json::to_value(c.store.load()?).map_err(|e| e.to_string())?;
+    let _ = app.emit("data-changed", &after);
+    crate::windows::sync_note_windows_with_previous(&app, &before, &after);
+    Ok(())
 }
 
 /// 前端直接复用 CLI 的领域命令（task add 等），保持单一实现
@@ -38,14 +162,22 @@ pub fn fe_call(app: AppHandle, args: Vec<String>) -> Value {
     let c = Ctx {
         store: Store::new(crate::app_paths()),
     };
-    let before = serde_json::to_value(c.store.load()).unwrap_or(serde_json::json!({}));
+    let before = c.store.load().ok();
     match crate::cli::dispatch_pub(&c, &args) {
         Ok(v) => {
-            // 广播完整数据（与 lib.rs 文件监听线程的 payload 结构一致），所有窗口据此刷新
-            let d = c.store.load();
-            if let Ok(v) = serde_json::to_value(&d) {
-                let _ = app.emit("data-changed", &v);
-                crate::windows::sync_note_windows_with_previous(&app, &before, &v);
+            // 广播完整数据（与 lib.rs 轮询线程的 payload 结构一致），所有窗口据此刷新
+            if let Ok(d) = c.store.load() {
+                if let Ok(v) = serde_json::to_value(&d) {
+                    let _ = app.emit("data-changed", &v);
+                    if let Some(before) = before
+                        .as_ref()
+                        .and_then(|data| serde_json::to_value(data).ok())
+                    {
+                        crate::windows::sync_note_windows_with_previous(&app, &before, &v);
+                    } else {
+                        crate::windows::sync_note_windows(&app, &v);
+                    }
+                }
             }
             v
         }
@@ -67,14 +199,21 @@ pub fn fe_close_note_window(app: AppHandle, id: String) {
 
 #[tauri::command]
 pub fn fe_note_drag(window: tauri::WebviewWindow) {
-    if let Ok(()) = window.start_dragging() {
-    }
+    if let Ok(()) = window.start_dragging() {}
 }
 
 #[tauri::command]
-pub fn fe_set_note_pos(app: AppHandle, id: String, x: i32, y: i32, w: f64, h: f64) -> Result<(), String> {
-    let mut d = ctx(&app).store.load();
-    {
+pub fn fe_set_note_pos(
+    app: AppHandle,
+    id: String,
+    x: i32,
+    y: i32,
+    w: f64,
+    h: f64,
+    monitor: String,
+) -> Result<(), String> {
+    let c = ctx(&app);
+    c.store.with_lock(2000, |d| {
         let n = d
             .note_mut(&id)
             .ok_or_else(|| format!("便签不存在: {}", id))?;
@@ -82,14 +221,10 @@ pub fn fe_set_note_pos(app: AppHandle, id: String, x: i32, y: i32, w: f64, h: f6
         n.y = y;
         n.w = w;
         n.h = h;
+        n.monitor = monitor;
         n.updated_at = crate::timeparse::now_iso();
-    }
-    ctx(&app).store.save(&d)
-}
-
-#[tauri::command]
-pub fn fe_theme(window: tauri::WebviewWindow, theme: String) {
-    let _ = window.eval(&format!("document.documentElement.dataset.theme = '{}';", theme));
+        Ok(())
+    })
 }
 
 #[tauri::command]
@@ -114,23 +249,30 @@ pub fn fe_widget_drag(window: tauri::WebviewWindow) {
 }
 
 #[tauri::command]
-pub fn fe_widget_set_pos(_app: AppHandle, x: i32, y: i32) -> Result<(), String> {
+pub fn fe_widget_set_pos(
+    _app: AppHandle,
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    monitor: String,
+) -> Result<(), String> {
     let c = Ctx {
         store: Store::new(crate::app_paths()),
     };
-    c.widget_set_pos(x, y)?;
+    c.widget_set_pos(x, y, w, h, &monitor)?;
     Ok(())
 }
 
 #[tauri::command]
 pub fn fe_widget_pin(app: AppHandle, pinned: bool) -> Result<(), String> {
-    if let Some(w) = app.get_webview_window(crate::windows::WIDGET_LABEL) {
-        let _ = w.set_always_on_top(pinned);
-    }
     let c = Ctx {
         store: Store::new(crate::app_paths()),
     };
     c.widget_pin(pinned)?;
+    if let Some(w) = app.get_webview_window(crate::windows::WIDGET_LABEL) {
+        let _ = w.set_always_on_top(pinned);
+    }
     Ok(())
 }
 
