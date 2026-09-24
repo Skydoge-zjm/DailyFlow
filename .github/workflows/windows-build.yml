@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-windows:
@@ -45,3 +45,18 @@ jobs:
             src-tauri/target/release/bundle/nsis/*.exe
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: dailyflow-build-${{ github.run_number }}-${{ github.run_attempt }}
+          name: DailyFlow build ${{ github.run_number }}.${{ github.run_attempt }}
+          generate_release_notes: true
+          make_latest: true
+          fail_on_unmatched_files: true
+          files: |
+            src-tauri/target/release/dailyflow.exe
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/*.exe
