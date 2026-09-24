@@ -60,7 +60,7 @@ npm run tauri build
 
 Tauri 会在 `src-tauri/target/release/bundle/` 下生成适用于当前构建平台的安装包。
 
-推送到 `main` 后，GitHub Actions 会自动构建 Windows x64 的 MSI、NSIS 安装包和 `dailyflow.exe`，并发布为一个新的 GitHub Release。前往 [Releases](https://github.com/Skydoge-zjm/DailyFlow/releases) 下载；每次工作流运行也会保留 30 天的 Actions 产物。
+推送到 `main` 后，GitHub Actions 会自动构建 Windows x64 的 MSI、NSIS 安装包和 `dailyflow.exe`，打包 `dailyflow-cli` Skill，并将它们发布为一个新的 GitHub Release。前往 [Releases](https://github.com/Skydoge-zjm/DailyFlow/releases) 下载；每次工作流运行也会保留 30 天的 Actions 产物。
 
 ### 单独使用 CLI
 

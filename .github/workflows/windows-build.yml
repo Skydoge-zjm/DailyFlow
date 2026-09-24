@@ -35,6 +35,12 @@ jobs:
       - name: Build application and installers
         run: npm run tauri build
 
+      - name: Package DailyFlow CLI Skill
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release-assets | Out-Null
+          Compress-Archive -Path skills/dailyflow-cli -DestinationPath release-assets/dailyflow-cli-skill.zip -Force
+
       - name: Upload Windows packages
         uses: actions/upload-artifact@v4
         with:
@@ -43,6 +49,7 @@ jobs:
             src-tauri/target/release/dailyflow.exe
             src-tauri/target/release/bundle/msi/*.msi
             src-tauri/target/release/bundle/nsis/*.exe
+            release-assets/dailyflow-cli-skill.zip
           if-no-files-found: error
           retention-days: 30
 
@@ -60,3 +67,4 @@ jobs:
             src-tauri/target/release/dailyflow.exe
             src-tauri/target/release/bundle/msi/*.msi
             src-tauri/target/release/bundle/nsis/*.exe
+            release-assets/dailyflow-cli-skill.zip
