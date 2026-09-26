@@ -870,7 +870,11 @@ impl Ctx {
         } else {
             let parsed = parse_date(date)?;
             let date_text = parsed.format("%Y-%m-%d").to_string();
-            let tasks: Vec<&Task> = d.tasks.iter().filter(|t| t.date == date_text).collect();
+            let tasks: Vec<&Task> = d
+                .tasks
+                .iter()
+                .filter(|t| t.date == date_text && t.kind != crate::model::TaskKind::Goal)
+                .collect();
             Some(json!({
                 "date": date_text,
                 "total": tasks.len(),

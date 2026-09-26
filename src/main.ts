@@ -183,6 +183,7 @@ function render(): void {
     selectedDate,
     onSelectDate: (d) => {
       selectedDate = d;
+      if (window.__dailyflow) window.__dailyflow.selected = d;
       render();
     },
     onCall: call,

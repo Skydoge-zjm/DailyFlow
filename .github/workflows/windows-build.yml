@@ -15,7 +15,6 @@ permissions:
 jobs:
   quality:
     name: Quality checks
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: windows-latest
     steps:
       - name: Check out source
@@ -50,7 +49,8 @@ jobs:
 
   build-windows:
     name: Build Windows x64 packages
-    if: github.event_name != 'pull_request'
+    needs: quality
+    if: github.event_name != 'pull_request' && needs.quality.result == 'success'
     runs-on: windows-latest
     permissions:
       contents: write

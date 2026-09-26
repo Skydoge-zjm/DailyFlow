@@ -55,6 +55,10 @@ function setupNote(id: string): void {
     status.textContent = message || "";
     status.hidden = !message;
   };
+  const applyOpacity = (settings: Data["settings"]) => {
+    const opacity = Number(settings.sticky_opacity);
+    wrap.style.opacity = Number.isFinite(opacity) ? String(Math.max(0, Math.min(1, opacity))) : "0.92";
+  };
 
   const pin = mkBtn("📌", "置顶", togglePin);
   const cycle = mkBtn("🎨", "换色", cycleColor);
@@ -79,6 +83,7 @@ function setupNote(id: string): void {
       data.settings.theme,
       data.settings.theme_overrides || {},
     );
+    applyOpacity(data.settings);
     const note = data.notes?.find((item) => item.id === id);
     if (!note) return;
     if (!bodyDirty && document.activeElement !== bodyEl) bodyEl.value = note.body;
@@ -197,6 +202,7 @@ function setupNote(id: string): void {
         data.settings.theme,
         data.settings.theme_overrides || {},
       );
+      applyOpacity(data.settings);
       const n = data.notes.find((x) => x.id === id);
       if (n) {
         if (!titleDirty) titleEl.value = n.title;
