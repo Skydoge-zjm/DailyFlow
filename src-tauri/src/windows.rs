@@ -113,7 +113,7 @@ fn build_widget_window(app: &AppHandle) -> Result<(), String> {
     let monitor = monitors
         .iter()
         .find(|monitor| has_relative_position && monitor_key(monitor) == saved_monitor)
-        .or_else(|| primary.as_ref())
+        .or(primary.as_ref())
         .or_else(|| monitors.first());
     let (mut x, mut y) = if has_relative_position || has_legacy_position {
         (d.settings.widget_x, d.settings.widget_y)
@@ -257,13 +257,9 @@ fn build_note_window(app: &AppHandle, id: &str, note: &Value) -> Result<(), Stri
     if let Some(monitor) = monitors
         .iter()
         .find(|monitor| !saved_monitor.is_empty() && monitor_key(monitor) == saved_monitor)
-        .or_else(|| {
-            primary
-                .as_ref()
-                .filter(|monitor| monitor_matches_position(monitor))
-        })
+        .or_else(|| primary.as_ref().filter(monitor_matches_position))
         .or_else(|| monitors.iter().find(monitor_matches_position))
-        .or_else(|| primary.as_ref())
+        .or(primary.as_ref())
         .or_else(|| monitors.first())
     {
         let area = monitor.work_area();

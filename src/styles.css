@@ -836,6 +836,8 @@ body[data-view="widget"] { overflow: hidden; background: transparent; }
 #app.modern-app .task-meta .tag-chip::before { content: "#"; opacity: 0.65; margin-right: 1px; }
 #app.modern-app .task-del { opacity: 0; padding: 4px 5px; border-radius: 6px; font-size: 13px; }
 #app.modern-app .task-item:hover .task-del { opacity: 0.75; }
+#app.modern-app .task-item:focus-within .task-del,
+#app.modern-app .task-item:focus-within .task-edit { opacity: 0.9; }
 #app.modern-app .task-del:hover { opacity: 1; background: color-mix(in srgb, var(--red) 13%, transparent); color: var(--red); }
 #app.modern-app .task-edit {
   align-self: flex-start;
@@ -1003,6 +1005,8 @@ body[data-view="widget"] { overflow: hidden; background: transparent; }
 #app.modern-app .note-delete { opacity: 0; color: var(--text-faint); font-size: 12px; padding: 3px 5px; border-radius: 5px; }
 #app.modern-app .note-row:hover .note-action,
 #app.modern-app .note-row:hover .note-delete { opacity: 0.78; }
+#app.modern-app .note-row:focus-within .note-action,
+#app.modern-app .note-row:focus-within .note-delete { opacity: 0.9; }
 #app.modern-app .note-action:hover { color: var(--accent); background: var(--accent-soft); opacity: 1; }
 #app.modern-app .note-delete:hover { color: var(--red); background: color-mix(in srgb, var(--red) 12%, transparent); opacity: 1; }
 #app.modern-app .notes-empty { padding: 10px 2px 3px; color: var(--text-faint); font-size: 10.5px; }

@@ -41,7 +41,7 @@ export interface Note {
 }
 
 export interface Settings {
-  theme: string; // dark | light
+  theme: "dark" | "light" | "auto";
   theme_preset: string; // 主题 preset 名，见 themes.ts PRESETS
   theme_overrides: Record<string, string>; // CSS 变量覆盖
   sticky_opacity: number;

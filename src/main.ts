@@ -141,7 +141,7 @@ async function reload(): Promise<void> {
 /** 应用主题：preset CSS + overrides → document；明暗切换 body[data-theme] */
 function applyThemeNow(): void {
   const s = normSettings(data.settings);
-  applyTheme(s.theme_preset || "classic-dark", s.theme === "light", s.theme_overrides);
+  applyTheme(s.theme_preset || "classic-dark", s.theme, s.theme_overrides);
 }
 
 async function persistSettings(patch: Partial<Settings>): Promise<boolean> {

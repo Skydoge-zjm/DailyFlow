@@ -28,6 +28,7 @@ let summaryEl: HTMLElement;
 let addInput: HTMLInputElement;
 let headSub: HTMLElement;
 let dateEl: HTMLElement;
+let pinButton: HTMLButtonElement | undefined;
 let currentData: WidgetData = {
   overdue: [], moreOverdue: [], tasks: [], completed: [], deadlines: [],
   moreDeadlines: [], goals: [], moreGoals: [], done: 0, total: 0,
@@ -111,7 +112,8 @@ function apply(d: Data) {
     total: todayItems.length,
   };
   render();
-  applyTheme(d.settings.theme_preset || "classic-dark", d.settings.theme === "light", d.settings.theme_overrides || {});
+  pinButton?.classList.toggle("pinned", d.settings.widget_pinned);
+  applyTheme(d.settings.theme_preset || "classic-dark", d.settings.theme, d.settings.theme_overrides || {});
 }
 
 function todayStr(): string {
@@ -194,6 +196,7 @@ function build() {
     await flushBoundsSave();
     await invoke("fe_widget_close", {});
   });
+  pinButton = pinBtn;
   head.append(liveDot, headStack, sp, pinBtn, mainBtn, closeBtn);
   head.addEventListener("mousedown", (e) => {
     if ((e.target as HTMLElement).closest(".widget-btn")) return;

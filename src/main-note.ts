@@ -76,7 +76,7 @@ function setupNote(id: string): void {
     const data = evt.payload;
     applyTheme(
       data.settings.theme_preset || "classic-dark",
-      data.settings.theme === "light",
+      data.settings.theme,
       data.settings.theme_overrides || {},
     );
     const note = data.notes?.find((item) => item.id === id);
@@ -100,8 +100,9 @@ function setupNote(id: string): void {
   app.append(wrap, resizeHandle);
 
   bar.addEventListener("mousedown", (e) => {
-    if ((e.target as HTMLElement).closest(".note-btn")) return;
-    invoke("fe_note_drag", {});
+    const target = e.target as HTMLElement;
+    if (target.closest(".note-btn, input, textarea, select, button")) return;
+    void invoke("fe_note_drag", {});
   });
 
   let saveT: number | undefined;
@@ -193,7 +194,7 @@ function setupNote(id: string): void {
       initialLoadComplete = true;
       applyTheme(
         data.settings.theme_preset || "classic-dark",
-        data.settings.theme === "light",
+        data.settings.theme,
         data.settings.theme_overrides || {},
       );
       const n = data.notes.find((x) => x.id === id);

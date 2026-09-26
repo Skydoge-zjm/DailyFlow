@@ -79,9 +79,11 @@ impl Store {
         f: impl FnOnce(&mut Data) -> Result<T, String>,
     ) -> Result<T, String> {
         let _lock = self.acquire_lock(timeout_ms)?;
-        let (mut data, migrated) = self.load_inner()?;
+        let (mut data, _migrated) = self.load_inner()?;
         let result = f(&mut data);
-        if result.is_ok() || migrated {
+        // An operation may mutate `data` before returning an error. Do not persist
+        // those partial changes, including when the input was migrated in memory.
+        if result.is_ok() {
             self.save_unlocked(&data)?;
         }
         result
@@ -164,15 +166,32 @@ impl Store {
     }
 
     fn backup_corrupt(&self, raw: &str) -> Result<(), String> {
+        let backups = self
+            .path
+            .parent()
+            .ok_or_else(|| "数据文件路径没有父目录".to_string())?
+            .join("backups");
+        fs::create_dir_all(&backups).map_err(|e| e.to_string())?;
+        if let Some(latest) = latest_backup_with_prefix(&backups, "data-corrupt-") {
+            if fs::read_to_string(&latest)
+                .map(|contents| contents == raw)
+                .unwrap_or(false)
+            {
+                return Ok(());
+            }
+        }
         let stamp = format_epoch_local(
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs() as i64,
         );
-        let backups = self.path.parent().unwrap().join("backups");
         let dest = backups.join(format!("data-corrupt-{}.json", stamp));
-        fs::write(dest, raw).map_err(|e| e.to_string())
+        if !dest.exists() {
+            fs::write(dest, raw).map_err(|e| e.to_string())?;
+            prune_backups(&backups, 10);
+        }
+        Ok(())
     }
 }
 
@@ -214,13 +233,21 @@ fn format_epoch_local(secs: i64) -> String {
 
 /// backups 目录里最新的一份备份文件
 fn latest_backup(dir: &Path) -> Option<PathBuf> {
+    latest_backup_with_prefix(dir, "data-")
+}
+
+fn latest_backup_with_prefix(dir: &Path, prefix: &str) -> Option<PathBuf> {
     let mut files: Vec<_> = fs::read_dir(dir)
         .ok()?
         .filter_map(|e| e.ok())
         .filter(|e| {
             e.file_name()
                 .to_str()
-                .map(|n| n.starts_with("data-") && !n.contains("corrupt"))
+                .map(|name| {
+                    name.starts_with(prefix)
+                        && name.ends_with(".json")
+                        && (prefix != "data-" || !name.starts_with("data-corrupt-"))
+                })
                 .unwrap_or(false)
         })
         .map(|e| e.path())

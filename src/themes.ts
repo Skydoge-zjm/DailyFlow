@@ -85,14 +85,31 @@ export function presetByName(name: string): ThemePresetMeta {
   return PRESETS.find((p) => p.name === name) ?? PRESETS[0];
 }
 
-/**
- * 应用主题：preset CSS（动态注入 <style id="theme-preset">）+ overrides（写 root inline 变量）。
- * classic 主题 = 移除注入（回落到静态 styles.css）。
- * 明暗由调用方先设置 document.documentElement.dataset.theme 再调本函数。
- */
-export function applyTheme(presetName: string, isLight: boolean, overrides: ThemeOverrides): void {
+type ThemeMode = "dark" | "light" | "auto";
+type ThemeInput = boolean | ThemeMode;
+
+let activeTheme: {
+  presetName: string;
+  mode: ThemeMode;
+  overrides: ThemeOverrides;
+} | undefined;
+
+function resolveLightMode(mode: ThemeMode): boolean {
+  return mode === "light"
+    || (mode === "auto"
+      && typeof window !== "undefined"
+      && typeof window.matchMedia === "function"
+      && window.matchMedia("(prefers-color-scheme: light)").matches);
+}
+
+function normalizeThemeMode(theme: ThemeInput): ThemeMode {
+  if (typeof theme === "boolean") return theme ? "light" : "dark";
+  return theme;
+}
+
+function applyThemeDocument(presetName: string, mode: ThemeMode, overrides: ThemeOverrides): void {
   const root = document.documentElement;
-  root.dataset.theme = isLight ? "light" : "dark";
+  root.dataset.theme = resolveLightMode(mode) ? "light" : "dark";
 
   // 1) preset CSS
   let styleEl = document.getElementById("theme-preset") as HTMLStyleElement | null;
@@ -116,4 +133,23 @@ export function applyTheme(presetName: string, isLight: boolean, overrides: Them
   for (const [k, v] of Object.entries(sanitizeThemeOverrides(overrides))) {
     root.style.setProperty(k, v);
   }
+}
+
+/**
+ * 应用主题：preset CSS（动态注入 <style id="theme-preset">）+ overrides（写 root inline 变量）。
+ * `auto` 使用系统明暗偏好，并在系统偏好变化时重新应用当前主题。
+ */
+export function applyTheme(presetName: string, theme: ThemeInput, overrides: ThemeOverrides): void {
+  const mode = normalizeThemeMode(theme);
+  activeTheme = { presetName, mode, overrides: { ...overrides } };
+  applyThemeDocument(presetName, mode, overrides);
+}
+
+if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
+  const media = window.matchMedia("(prefers-color-scheme: light)");
+  media.addEventListener?.("change", () => {
+    if (activeTheme?.mode === "auto") {
+      applyThemeDocument(activeTheme.presetName, activeTheme.mode, activeTheme.overrides);
+    }
+  });
 }

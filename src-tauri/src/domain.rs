@@ -53,13 +53,13 @@ impl Ctx {
     fn load(&self) -> Result<Data, String> {
         self.store.load()
     }
-    /// 保存撤销快照：记录操作前 tasks/notes 全量（settings/undo 不含）
-    fn snapshot_undo(&self, d: &Data, label: &str) -> UndoEntry {
+    /// 创建新的撤销记录。新格式只保存本次删除的项目；tasks/notes 仅为旧版本兼容保留。
+    fn snapshot_undo(&self, label: &str) -> UndoEntry {
         UndoEntry {
             ts: now_iso(),
             label: label.to_string(),
-            tasks: d.tasks.clone(),
-            notes: d.notes.clone(),
+            tasks: Vec::new(),
+            notes: Vec::new(),
             deleted_tasks: Vec::new(),
             deleted_notes: Vec::new(),
         }
@@ -183,11 +183,7 @@ impl Ctx {
         tasks.retain(|t| {
             let scope_ok = match scope.as_str() {
                 "all" => true,
-                "today" => match t.kind {
-                    crate::model::TaskKind::Goal => t.date == today, // goal 只在显式选中的日子出现
-                    crate::model::TaskKind::Deadline => t.date == today && !t.done, // 截止日当天
-                    crate::model::TaskKind::Normal => t.date == today,
-                },
+                "today" => t.kind != crate::model::TaskKind::Goal && t.date == today,
                 "week" => {
                     // 未来 7 天（含今天）
                     let today_p = chrono::Local::now().date_naive();
@@ -450,7 +446,7 @@ impl Ctx {
             if matches.next().is_some() {
                 return Err(format!("任务 ID 重复，拒绝删除以免误删: {}", id));
             }
-            let mut snapshot = self.snapshot_undo(d, "删除任务");
+            let mut snapshot = self.snapshot_undo("删除任务");
             snapshot.deleted_tasks.push(deleted);
             d.tasks.retain(|t| t.id != id);
             d.undo = Some(snapshot);
@@ -537,7 +533,7 @@ impl Ctx {
                 .collect::<Vec<_>>();
             let removed = deleted.len();
             if removed > 0 {
-                let mut snapshot = self.snapshot_undo(d, "清理已完成任务");
+                let mut snapshot = self.snapshot_undo("清理已完成任务");
                 snapshot.deleted_tasks = deleted;
                 d.tasks.retain(|t| {
                     !(t.done
@@ -629,7 +625,7 @@ impl Ctx {
             if d.notes.iter().filter(|note| note.id == id).count() > 1 {
                 return Err(format!("便签 ID 重复，拒绝删除以免误删: {}", id));
             }
-            let mut snapshot = self.snapshot_undo(d, "删除便签");
+            let mut snapshot = self.snapshot_undo("删除便签");
             snapshot.deleted_notes.push(deleted);
             d.notes.retain(|n| n.id != id);
             d.undo = Some(snapshot);
@@ -819,11 +815,15 @@ impl Ctx {
         let date_s = pd.format("%Y-%m-%d").to_string();
         let d = self.load()?;
         // 当天任务 + 需要关注的其他类型（进行中的长期目标 / 即将到期的截止任务）
-        let mut tasks: Vec<&Task> = d.tasks.iter().filter(|t| t.date == date_s).collect();
+        let mut tasks: Vec<&Task> = d
+            .tasks
+            .iter()
+            .filter(|t| t.date == date_s && t.kind != crate::model::TaskKind::Goal)
+            .collect();
         let goals: Vec<&Task> = d
             .tasks
             .iter()
-            .filter(|t| t.kind == crate::model::TaskKind::Goal && !t.done && t.date != date_s)
+            .filter(|t| t.kind == crate::model::TaskKind::Goal && !t.done)
             .collect();
         let total = tasks.len();
         let done = tasks.iter().filter(|t| t.done).count();
