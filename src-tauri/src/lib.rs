@@ -1,3 +1,4 @@
+mod autostart;
 mod cli;
 mod cli_path;
 mod commands;

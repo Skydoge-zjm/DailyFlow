@@ -16,19 +16,26 @@ impl Drop for FileLock {
 
 pub struct Store {
     pub path: PathBuf,
+    init_error: Option<String>,
 }
 
 impl Store {
     pub fn new(app_data_dir: PathBuf) -> Self {
-        let _ = fs::create_dir_all(&app_data_dir);
         let backups = app_data_dir.join("backups");
-        let _ = fs::create_dir_all(&backups);
+        let init_error = match fs::create_dir_all(&app_data_dir) {
+            Ok(()) => fs::create_dir_all(&backups)
+                .err()
+                .map(|error| format!("创建备份目录失败: {}", error)),
+            Err(error) => Some(format!("创建数据目录失败: {}", error)),
+        };
         Store {
             path: app_data_dir.join("data.json"),
+            init_error,
         }
     }
 
     fn load_inner(&self) -> Result<(Data, bool), String> {
+        self.ensure_ready()?;
         let raw = match fs::read_to_string(&self.path) {
             Ok(raw) => raw,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -90,6 +97,7 @@ impl Store {
     }
 
     fn acquire_lock(&self, timeout_ms: u64) -> Result<FileLock, String> {
+        self.ensure_ready()?;
         let start = std::time::Instant::now();
         let lock_path = self.path.with_extension("lock");
         if let Some(parent) = lock_path.parent() {
@@ -113,6 +121,13 @@ impl Store {
                 }
                 Err(error) => return Err(format!("获取数据锁失败: {}", error)),
             }
+        }
+    }
+
+    fn ensure_ready(&self) -> Result<(), String> {
+        match &self.init_error {
+            Some(error) => Err(error.clone()),
+            None => Ok(()),
         }
     }
 

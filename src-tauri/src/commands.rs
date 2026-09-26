@@ -93,6 +93,8 @@ pub fn fe_save_settings(app: AppHandle, patch: Value) -> Result<(), String> {
         return Err(format!("未知设置字段: {}", unknown));
     }
     let before = serde_json::to_value(c.store.load()?).map_err(|e| e.to_string())?;
+    let previous_autostart = before["settings"]["autostart"].as_bool().unwrap_or(false);
+    let requested_autostart = optional_bool(&patch, "autostart")?;
     c.store.with_lock(2000, |data| {
         if let Some(theme) = optional_string(&patch, "theme")? {
             data.settings.theme = match theme {
@@ -131,9 +133,6 @@ pub fn fe_save_settings(app: AppHandle, patch: Value) -> Result<(), String> {
             }
             data.settings.sticky_opacity = opacity;
         }
-        if let Some(value) = optional_bool(&patch, "autostart")? {
-            data.settings.autostart = value;
-        }
         if let Some(value) = optional_bool(&patch, "widget_visible")? {
             data.settings.widget_visible = value;
         }
@@ -148,8 +147,26 @@ pub fn fe_save_settings(app: AppHandle, patch: Value) -> Result<(), String> {
             data.settings.widget_y =
                 i32::try_from(value).map_err(|_| "widget_y 超出范围".to_string())?;
         }
+        if let Some(value) = requested_autostart {
+            data.settings.autostart = value;
+        }
         Ok(())
     })?;
+    if let Some(value) = requested_autostart.filter(|value| *value != previous_autostart) {
+        if let Err(error) = crate::autostart::set_enabled(value) {
+            let rollback = c.store.with_lock(2000, |data| {
+                data.settings.autostart = previous_autostart;
+                Ok(())
+            });
+            return match rollback {
+                Ok(()) => Err(error),
+                Err(rollback_error) => Err(format!(
+                    "{}；恢复开机自启设置失败: {}",
+                    error, rollback_error
+                )),
+            };
+        }
+    }
     let after = serde_json::to_value(c.store.load()?).map_err(|e| e.to_string())?;
     let _ = app.emit("data-changed", &after);
     crate::windows::sync_note_windows_with_previous(&app, &before, &after);

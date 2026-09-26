@@ -34,6 +34,18 @@ export function openCliPathPanel(): void {
     class: "tp-btn primary",
     onclick: () => void addToPath(),
   }, "一键配置");
+  const autostart = document.createElement("input");
+  autostart.type = "checkbox";
+  autostart.checked = window.__dailyflow.data.settings.autostart;
+  autostart.setAttribute("aria-label", "登录 Windows 时启动 DailyFlow");
+  autostart.addEventListener("change", async () => {
+    const requested = autostart.checked;
+    autostart.disabled = true;
+    const saved = await window.__dailyflow.saveSettings({ autostart: requested });
+    if (!saved) autostart.checked = window.__dailyflow.data.settings.autostart;
+    autostart.disabled = false;
+  });
+  const autostartRow = el("label", { class: "cli-path-autostart" }, autostart, "登录 Windows 时启动 DailyFlow");
 
   const closePanel = () => {
     panel.remove();
@@ -116,6 +128,7 @@ export function openCliPathPanel(): void {
       closeButton,
     ),
     el("p", { class: "cli-path-description" }, "将 DailyFlow 所在目录加入当前 Windows 用户的 PATH，之后可在终端或 AI 助手中直接运行 dailyflow。"),
+    autostartRow,
     el("div", { class: "tp-sub" }, "PATH 状态"),
     statusRow,
     el("div", { class: "cli-path-directory-field" },

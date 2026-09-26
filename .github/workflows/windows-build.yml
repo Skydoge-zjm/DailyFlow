@@ -38,6 +38,9 @@ jobs:
       - name: Check frontend build
         run: npm run build
 
+      - name: Check synchronized app versions
+        run: npm run check:version
+
       - name: Check Rust formatting
         run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 
@@ -82,6 +85,13 @@ jobs:
           New-Item -ItemType Directory -Force -Path release-assets | Out-Null
           Compress-Archive -Path skills/dailyflow-cli -DestinationPath release-assets/dailyflow-cli-skill.zip -Force
 
+      - name: Read app version
+        id: version
+        shell: pwsh
+        run: |
+          $version = node scripts/check-version.cjs --print
+          "version=$version" >> $env:GITHUB_OUTPUT
+
       - name: Upload Windows packages
         uses: actions/upload-artifact@v4
         with:
@@ -99,8 +109,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: dailyflow-build-${{ github.run_number }}-${{ github.run_attempt }}
-          name: DailyFlow build ${{ github.run_number }}.${{ github.run_attempt }}
+          tag_name: dailyflow-v${{ steps.version.outputs.version }}-${{ github.run_number }}-${{ github.run_attempt }}
+          name: DailyFlow v${{ steps.version.outputs.version }} build ${{ github.run_number }}.${{ github.run_attempt }}
           generate_release_notes: true
           make_latest: true
           fail_on_unmatched_files: true

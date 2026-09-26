@@ -1063,6 +1063,16 @@ body.modern-ui .tp-btn { border-radius: 8px; }
 }
 .cli-path-close:hover { color: var(--text); background: var(--card-hover); }
 .cli-path-description { margin-top: 9px; color: var(--text-dim); font-size: 12px; line-height: 1.55; }
+.cli-path-autostart {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  color: var(--text-dim);
+  font-size: 12px;
+  cursor: pointer;
+}
+.cli-path-autostart input { accent-color: var(--accent); }
 .cli-path-status {
   display: flex;
   align-items: flex-start;
