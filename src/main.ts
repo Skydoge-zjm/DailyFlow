@@ -122,7 +122,7 @@ async function reload(): Promise<void> {
   const generation = ++reloadGeneration;
   const revision = dataRevision;
   try {
-    const next = previewMode ? previewData() : await invoke<Data>("fe_load");
+    const next = previewMode ? previewData() : await invoke<Data>("fe_load_ui");
     if (generation !== reloadGeneration || revision !== dataRevision) return;
     data = next;
     hasLoadedData = true;
@@ -214,7 +214,7 @@ function render(): void {
 }
 
 // ---------- 事件 ----------
-window.addEventListener("DOMContentLoaded", () => {
+window.addEventListener("DOMContentLoaded", async () => {
   // widget / note 子窗口有自己的入口模块；主逻辑只在主窗口跑
   if (new URLSearchParams(location.search).has("view") || new URLSearchParams(location.search).has("note")) {
     return;
@@ -232,19 +232,19 @@ window.addEventListener("DOMContentLoaded", () => {
     undoToast,
   };
 
-  reload();
+  if (previewMode) {
+    await reload();
+    return;
+  }
 
-  if (previewMode) return;
-
-  // 后端文件监听推送（CLI 修改 data.json 后自动刷新）
+  // Apply the newest UI snapshot once per frame when writes arrive together.
   // @ts-expect-error Tauri event API
   const { listen } = window.__TAURI__.event;
-  // rAF 合帧：连续事件（如批量 CLI 操作）只触发一次渲染，且不与浏览器绘制争帧
   let rafPending = false;
-  listen("data-changed", async (evt: { payload: unknown }) => {
+  await listen("data-changed", (evt: { payload: Data }) => {
     dataRevision += 1;
     reloadGeneration += 1;
-    data = evt.payload as Data;
+    data = evt.payload;
     hasLoadedData = true;
     if (!rafPending) {
       rafPending = true;
@@ -254,7 +254,7 @@ window.addEventListener("DOMContentLoaded", () => {
       });
     }
   });
-  listen("widget-edit-task", async (evt: { payload: { id: string } }) => {
+  await listen("widget-edit-task", async (evt: { payload: { id: string } }) => {
     await reload();
     const task = data.tasks.find((item) => item.id === evt.payload?.id);
     if (!task || !currentRenderOpts) {
@@ -267,4 +267,5 @@ window.addEventListener("DOMContentLoaded", () => {
     }
     openTaskEditor(task, currentRenderOpts);
   });
+  await reload();
 });

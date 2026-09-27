@@ -92,10 +92,8 @@ pub fn on_tray_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
                 }
             };
             if c.widget_show(!visible).is_ok() {
-                if !visible {
-                    let _ = crate::windows::open_widget_window(app);
-                } else {
-                    crate::windows::close_widget_window(app);
+                if let Ok(data) = c.store.load() {
+                    crate::publish_data_change(app, data);
                 }
             }
         }
@@ -104,11 +102,9 @@ pub fn on_tray_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
                 store: crate::store::Store::new(crate::app_paths()),
             };
             let body = "（双击编辑内容）".to_string();
-            if let Ok(v) = c.note_add(&body, "", "") {
-                if let Some(note) = v["note"].as_object() {
-                    let val = serde_json::Value::Object(note.clone());
-                    let _ =
-                        crate::windows::open_note_window(app, v["id"].as_str().unwrap_or(""), &val);
+            if c.note_add(&body, "", "").is_ok() {
+                if let Ok(data) = c.store.load() {
+                    crate::publish_data_change(app, data);
                 }
             }
         }
@@ -125,13 +121,7 @@ pub fn on_tray_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
                 Ok(data.clone())
             });
             if let Ok(data) = updated {
-                let value = serde_json::to_value(&data).unwrap_or(serde_json::json!({}));
-                use tauri::Emitter;
-                let _ = app.emit("data-changed", &value);
-                crate::windows::sync_note_windows(app, &value);
-                if show {
-                    crate::windows::open_visible_notes(app, &value);
-                }
+                crate::publish_data_change(app, data);
             }
         }
         "quit" => {

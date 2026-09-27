@@ -1,5 +1,5 @@
 use serde_json::Value;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 use crate::domain::Ctx;
 use crate::store::Store;
@@ -61,11 +61,11 @@ pub fn fe_cli_path_add() -> Result<crate::cli_path::CliPathStatus, String> {
 }
 
 #[tauri::command]
-pub fn fe_load() -> Result<crate::model::Data, String> {
+pub fn fe_load_ui() -> Result<crate::model::UiData, String> {
     let c = Ctx {
         store: Store::new(crate::app_paths()),
     };
-    c.store.load()
+    c.store.load_ui()
 }
 
 /// 合并保存设置字段，避免前端携带的旧整份 Data 覆盖其他窗口刚保存的任务或便签。
@@ -92,8 +92,8 @@ pub fn fe_save_settings(app: AppHandle, patch: Value) -> Result<(), String> {
     {
         return Err(format!("未知设置字段: {}", unknown));
     }
-    let before = serde_json::to_value(c.store.load()?).map_err(|e| e.to_string())?;
-    let previous_autostart = before["settings"]["autostart"].as_bool().unwrap_or(false);
+    let before = c.store.load()?;
+    let previous_autostart = before.settings.autostart;
     let requested_autostart = optional_bool(&patch, "autostart")?;
     c.store.with_lock(2000, |data| {
         if let Some(theme) = optional_string(&patch, "theme")? {
@@ -167,9 +167,8 @@ pub fn fe_save_settings(app: AppHandle, patch: Value) -> Result<(), String> {
             };
         }
     }
-    let after = serde_json::to_value(c.store.load()?).map_err(|e| e.to_string())?;
-    let _ = app.emit("data-changed", &after);
-    crate::windows::sync_note_windows_with_previous(&app, &before, &after);
+    let after = c.store.load()?;
+    crate::publish_data_change(&app, after);
     Ok(())
 }
 
@@ -179,22 +178,10 @@ pub fn fe_call(app: AppHandle, args: Vec<String>) -> Value {
     let c = Ctx {
         store: Store::new(crate::app_paths()),
     };
-    let before = c.store.load().ok();
     match crate::cli::dispatch_pub(&c, &args) {
         Ok(v) => {
-            // 广播完整数据（与 lib.rs 轮询线程的 payload 结构一致），所有窗口据此刷新
-            if let Ok(d) = c.store.load() {
-                if let Ok(v) = serde_json::to_value(&d) {
-                    let _ = app.emit("data-changed", &v);
-                    if let Some(before) = before
-                        .as_ref()
-                        .and_then(|data| serde_json::to_value(data).ok())
-                    {
-                        crate::windows::sync_note_windows_with_previous(&app, &before, &v);
-                    } else {
-                        crate::windows::sync_note_windows(&app, &v);
-                    }
-                }
+            if let Ok(data) = c.store.load() {
+                crate::publish_data_change(&app, data);
             }
             v
         }
@@ -203,7 +190,7 @@ pub fn fe_call(app: AppHandle, args: Vec<String>) -> Value {
 }
 
 #[tauri::command]
-pub fn fe_note_window(app: AppHandle, id: String, note: Value) -> Result<(), String> {
+pub fn fe_note_window(app: AppHandle, id: String, note: crate::model::Note) -> Result<(), String> {
     crate::windows::open_note_window(&app, &id, &note)
 }
 

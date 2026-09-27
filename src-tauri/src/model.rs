@@ -118,7 +118,7 @@ fn default_true() -> bool {
     true
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum Theme {
     #[default]
@@ -297,7 +297,7 @@ fn valid_percentage(value: &str) -> bool {
         .is_some_and(|number| number.is_finite() && (0.0..=100.0).contains(&number))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Settings {
     #[serde(default)]
@@ -361,7 +361,7 @@ impl Default for Settings {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Task {
     pub id: String,
@@ -398,7 +398,7 @@ pub struct Task {
     pub completed_at: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Note {
     pub id: String,
@@ -440,7 +440,7 @@ fn default_note_h() -> f64 {
 pub const NOTE_COLORS: [&str; 6] = ["yellow", "green", "blue", "pink", "purple", "dark"];
 
 /// 撤销快照：记录最近一次改动前的任务/便签状态（单级撤销）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct UndoEntry {
     pub ts: String,
@@ -457,7 +457,7 @@ pub struct UndoEntry {
     pub deleted_notes: Vec<Note>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Data {
     #[serde(default = "default_version")]
@@ -471,6 +471,38 @@ pub struct Data {
     /// 最近一次可撤销操作的前置快照（None = 无可撤销）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub undo: Option<UndoEntry>,
+}
+
+// UI reads omit undo snapshots so historical deletion data is not parsed or sent to webviews.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UiData {
+    #[serde(default = "default_version")]
+    pub version: u32,
+    #[serde(default)]
+    pub tasks: Vec<Task>,
+    #[serde(default)]
+    pub notes: Vec<Note>,
+    #[serde(default)]
+    pub settings: Settings,
+}
+
+#[derive(Clone, Serialize)]
+pub struct UiSnapshot<'a> {
+    pub version: u32,
+    pub tasks: &'a [Task],
+    pub notes: &'a [Note],
+    pub settings: &'a Settings,
+}
+
+impl From<Data> for UiData {
+    fn from(data: Data) -> Self {
+        Self {
+            version: data.version,
+            tasks: data.tasks,
+            notes: data.notes,
+            settings: data.settings,
+        }
+    }
 }
 
 fn default_version() -> u32 {
@@ -490,6 +522,34 @@ impl Default for Data {
 }
 
 impl Data {
+    pub fn ui_snapshot(&self) -> UiSnapshot<'_> {
+        UiSnapshot {
+            version: self.version,
+            tasks: &self.tasks,
+            notes: &self.notes,
+            settings: &self.settings,
+        }
+    }
+
+    pub fn affects_ui_except_tasks(&self, other: &Self) -> bool {
+        self.notes.len() != other.notes.len()
+            || self.notes.iter().zip(&other.notes).any(|(left, right)| {
+                left.id != right.id
+                    || left.title != right.title
+                    || left.body != right.body
+                    || left.color != right.color
+                    || left.pinned != right.pinned
+                    || left.visible != right.visible
+            })
+            || self.settings.theme != other.settings.theme
+            || self.settings.theme_preset != other.settings.theme_preset
+            || self.settings.theme_overrides != other.settings.theme_overrides
+            || self.settings.sticky_opacity != other.settings.sticky_opacity
+            || self.settings.autostart != other.settings.autostart
+            || self.settings.widget_visible != other.settings.widget_visible
+            || self.settings.widget_pinned != other.settings.widget_pinned
+    }
+
     pub fn task(&self, id: &str) -> Option<&Task> {
         self.tasks.iter().find(|t| t.id == id)
     }

@@ -79,6 +79,34 @@ impl Store {
         Ok(latest)
     }
 
+    pub fn load_ui(&self) -> Result<crate::model::UiData, String> {
+        self.ensure_ready()?;
+        let raw = match fs::read_to_string(&self.path) {
+            Ok(raw) => raw,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(Data::default().into());
+            }
+            Err(error) => return Err(format!("读取数据文件失败: {}", error)),
+        };
+        let mut data = match serde_json::from_str::<crate::model::UiData>(&raw) {
+            Ok(data) => data,
+            Err(error) => {
+                if let Err(backup_error) = self.backup_corrupt(&raw) {
+                    eprintln!("备份损坏的数据文件失败: {}", backup_error);
+                }
+                return Err(format!("data.json 解析失败，原文件已保留: {}", error));
+            }
+        };
+        if data.version != 1 && data.version != DATA_VERSION {
+            return Err(format!(
+                "数据版本 {} 不受当前版本 {} 支持；原文件已保留",
+                data.version, DATA_VERSION
+            ));
+        }
+        data.version = DATA_VERSION;
+        Ok(data)
+    }
+
     /// 带文件锁的读-改-写。数据变更和原子落盘都在锁内完成。
     pub fn with_lock<T>(
         &self,

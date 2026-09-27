@@ -43,23 +43,32 @@ let moreGoalsExpanded = false;
 let dataRevision = 0;
 let reloadGeneration = 0;
 let loadErrorShown = false;
+let reloadFrame: number | undefined;
+let pendingData: Data | undefined;
 
-window.addEventListener("DOMContentLoaded", () => {
+window.addEventListener("DOMContentLoaded", async () => {
   if (new URLSearchParams(location.search).get("view") !== "widget") return;
   document.body.dataset.view = "widget";
   document.documentElement.dataset.view = "widget";
   build();
-  void reload();
-  window.setInterval(reload, 5000);
 
-  // 后端推送
+  // Apply the newest snapshot once per frame when several writes arrive together.
   // @ts-expect-error Tauri event API
   const { listen } = window.__TAURI__.event;
-  listen("data-changed", (evt: { payload: Data }) => {
+  await listen("data-changed", (evt: { payload: Data }) => {
     dataRevision += 1;
     reloadGeneration += 1;
-    apply(evt.payload);
+    pendingData = evt.payload;
+    if (reloadFrame === undefined) {
+      reloadFrame = requestAnimationFrame(() => {
+        reloadFrame = undefined;
+        const data = pendingData;
+        pendingData = undefined;
+        if (data) apply(data);
+      });
+    }
   });
+  await reload();
 });
 
 async function reload() {
@@ -67,7 +76,7 @@ async function reload() {
   const generation = ++reloadGeneration;
   const revision = dataRevision;
   try {
-    const d = await invoke<Data>("fe_load");
+    const d = await invoke<Data>("fe_load_ui");
     if (generation === reloadGeneration && revision === dataRevision) {
       loadErrorShown = false;
       apply(d);
@@ -243,11 +252,6 @@ function build() {
   wrap.className = "widget";
   wrap.append(head, listEl, footEl);
   app.append(wrap, resize);
-
-  // 置顶状态初始化
-  invoke<{ settings: { widget_pinned: boolean } }>("fe_load").then((d) => {
-    pinBtn.classList.toggle("pinned", d.settings.widget_pinned);
-  }).catch(() => showWidgetToast("读取悬浮窗设置失败"));
 
   const nativeWindow = getCurrentWindow();
   void nativeWindow.onMoved(scheduleBoundsSave).catch(() => undefined);

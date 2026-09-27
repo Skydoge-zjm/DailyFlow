@@ -1,7 +1,7 @@
-use serde_json::{json, Value};
+use crate::model::{Data, Note};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 pub const NOTE_WIN_PREFIX: &str = "note-";
 pub const WIDGET_LABEL: &str = "widget-today";
@@ -180,7 +180,7 @@ pub fn close_widget_window(app: &AppHandle) {
 ///
 /// 只在这里登记窗口标签，真正的 builder 在独立线程执行，避免 WebView2
 /// 在同步命令、数据轮询回调或托盘事件中发生死锁。
-pub fn open_note_window(app: &AppHandle, id: &str, note: &Value) -> Result<(), String> {
+pub fn open_note_window(app: &AppHandle, id: &str, note: &Note) -> Result<(), String> {
     let label = note_label(id);
     if let Some(existing) = app.get_webview_window(&label) {
         let _ = existing.show();
@@ -215,7 +215,7 @@ pub fn open_note_window(app: &AppHandle, id: &str, note: &Value) -> Result<(), S
         })
 }
 
-fn build_note_window(app: &AppHandle, id: &str, note: &Value) -> Result<(), String> {
+fn build_note_window(app: &AppHandle, id: &str, note: &Note) -> Result<(), String> {
     let label = note_label(id);
     // Another opener may have completed between the reservation and the worker thread.
     if let Some(existing) = app.get_webview_window(&label) {
@@ -223,20 +223,12 @@ fn build_note_window(app: &AppHandle, id: &str, note: &Value) -> Result<(), Stri
         let _ = existing.set_focus();
         return Ok(());
     }
-    let mut x = note["x"].as_i64().unwrap_or(1300) as i32;
-    let mut y = note["y"].as_i64().unwrap_or(120) as i32;
-    let w = note["w"]
-        .as_f64()
-        .filter(|value| value.is_finite())
-        .unwrap_or(260.0)
-        .clamp(180.0, 1200.0);
-    let h = note["h"]
-        .as_f64()
-        .filter(|value| value.is_finite())
-        .unwrap_or(220.0)
-        .clamp(120.0, 1200.0);
+    let mut x = note.x;
+    let mut y = note.y;
+    let w = if note.w.is_finite() { note.w } else { 260.0 }.clamp(180.0, 1200.0);
+    let h = if note.h.is_finite() { note.h } else { 220.0 }.clamp(120.0, 1200.0);
     let monitors = app.available_monitors().unwrap_or_default();
-    let saved_monitor = note["monitor"].as_str().unwrap_or("").trim();
+    let saved_monitor = note.monitor.trim();
     let monitor_matches_position = |monitor: &&tauri::Monitor| {
         let area = monitor.work_area();
         let scale = monitor.scale_factor();
@@ -289,7 +281,7 @@ fn build_note_window(app: &AppHandle, id: &str, note: &Value) -> Result<(), Stri
     .position(x as f64, y as f64)
     .decorations(false)
     .transparent(true)
-    .always_on_top(note["pinned"].as_bool().unwrap_or(false))
+    .always_on_top(note.pinned)
     .resizable(true)
     .skip_taskbar(true)
     .shadow(false);
@@ -304,81 +296,78 @@ fn build_note_window(app: &AppHandle, id: &str, note: &Value) -> Result<(), Stri
 ///
 /// 启动时只清理不该显示的窗口，不会把所有历史 `visible` 便签一次性创建出来。
 /// 新建便签、单独显示便签和托盘“显示全部”会通过显式函数打开窗口。
-pub fn sync_note_windows(app: &AppHandle, data: &Value) {
+pub fn sync_note_windows(app: &AppHandle, data: &Data) {
     sync_note_windows_inner(app, data, None);
 }
 
 /// 同步外部变更，并只打开从隐藏变为可见的新便签。
-pub fn sync_note_windows_with_previous(app: &AppHandle, previous: &Value, data: &Value) {
+pub fn sync_note_windows_with_previous(app: &AppHandle, previous: &Data, data: &Data) {
     sync_note_windows_inner(app, data, Some(previous));
 }
 
-/// 用户明确选择“显示全部便签”时使用。
-pub fn open_visible_notes(app: &AppHandle, data: &Value) {
-    let notes = data["notes"].as_array().cloned().unwrap_or_default();
-    for n in notes {
-        if n["visible"].as_bool().unwrap_or(false) {
-            let id = n["id"].as_str().unwrap_or_default();
-            let _ = open_note_window(app, id, &n);
-        }
-    }
-}
+fn sync_note_windows_inner(app: &AppHandle, data: &Data, previous: Option<&Data>) {
+    let want = &data.notes;
 
-fn sync_note_windows_inner(app: &AppHandle, data: &Value, previous: Option<&Value>) {
-    let notes = data["notes"].as_array().cloned().unwrap_or_default();
-    let want: Vec<(String, Value)> = notes
-        .iter()
-        .map(|n| (n["id"].as_str().unwrap_or_default().to_string(), n.clone()))
-        .collect();
-
-    // 关闭数据里已不存在/不可见但窗口还开着的
-    for (label, _w) in app.webview_windows() {
+    // 关闭已删除或隐藏便签对应的窗口。
+    for (label, _window) in app.webview_windows() {
         if let Some(id) = label.strip_prefix(NOTE_WIN_PREFIX) {
-            let match_want = want.iter().find(|(wid, _)| wid == id);
-            let should_show = match_want
-                .map(|(_, n)| n["visible"].as_bool().unwrap_or(true))
-                .unwrap_or(false);
-            if !should_show {
-                if match_want.is_none() {
-                    let _ = app.get_webview_window(&label).map(|w| w.close());
-                } else {
-                    let _ = app.get_webview_window(&label).map(|w| w.hide());
+            let matching_note = want.iter().find(|note| note.id == id);
+            match matching_note {
+                None => {
+                    let _ = app.get_webview_window(&label).map(|window| window.close());
+                }
+                Some(note) if !note.visible => {
+                    let _ = app.get_webview_window(&label).map(|window| window.hide());
+                }
+                Some(note) => {
+                    let pin_changed = previous
+                        .and_then(|data| data.notes.iter().find(|old| old.id == note.id))
+                        .is_none_or(|old| old.pinned != note.pinned);
+                    if pin_changed {
+                        let _ = app
+                            .get_webview_window(&label)
+                            .map(|window| window.set_always_on_top(note.pinned));
+                    }
                 }
             }
         }
     }
-    // 仅打开本次变更里从隐藏变为可见的便签，避免普通任务更新也弹出全部历史便签。
+    // 只打开本次更新中从隐藏变为显示的便签。
     if let Some(previous) = previous {
-        let old_notes = previous["notes"].as_array().cloned().unwrap_or_default();
-        for (id, n) in &want {
-            if !n["visible"].as_bool().unwrap_or(false) {
+        for n in want {
+            if !n.visible {
                 continue;
             }
-            let was_visible = old_notes
+            let was_visible = previous
+                .notes
                 .iter()
-                .find(|old| old["id"].as_str() == Some(id.as_str()))
-                .and_then(|old| old["visible"].as_bool())
-                .unwrap_or(false);
+                .find(|old| old.id == n.id)
+                .is_some_and(|old| old.visible);
             if !was_visible {
-                let _ = open_note_window(app, id, n);
+                let _ = open_note_window(app, &n.id, n);
             }
         }
     }
 
-    // 今日悬浮窗跟随 settings.widget_visible
-    let widget_visible = data["settings"]["widget_visible"].as_bool().unwrap_or(true);
-    if widget_visible {
-        let _ = open_widget_window(app);
+    if data.settings.widget_visible {
+        let became_visible = previous
+            .map(|old| !old.settings.widget_visible)
+            .unwrap_or(true);
+        if became_visible || app.get_webview_window(WIDGET_LABEL).is_none() {
+            let _ = open_widget_window(app);
+        }
     } else {
         close_widget_window(app);
     }
 
-    // 悬浮窗置顶状态跟随
-    if let Some(w) = app.get_webview_window(WIDGET_LABEL) {
-        let _ = w.set_always_on_top(data["settings"]["widget_pinned"].as_bool().unwrap_or(true));
+    let widget_pin_changed = previous
+        .map(|old| old.settings.widget_pinned != data.settings.widget_pinned)
+        .unwrap_or(false);
+    if widget_pin_changed {
+        if let Some(w) = app.get_webview_window(WIDGET_LABEL) {
+            let _ = w.set_always_on_top(data.settings.widget_pinned);
+        }
     }
-
-    let _ = app.emit("note-synced", json!({}));
 }
 
 #[cfg(test)]

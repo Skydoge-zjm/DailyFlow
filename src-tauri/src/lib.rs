@@ -10,7 +10,33 @@ mod tray;
 mod windows;
 
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use tauri::{Manager, RunEvent};
+
+#[derive(Clone)]
+struct SyncState {
+    snapshot: Arc<Mutex<SyncSnapshot>>,
+    dispatch: Arc<Mutex<()>>,
+}
+
+struct SyncSnapshot {
+    modified: Option<std::time::SystemTime>,
+    generation: u64,
+    data: Arc<model::Data>,
+}
+
+impl SyncState {
+    fn new(data: model::Data, modified: Option<std::time::SystemTime>) -> Self {
+        Self {
+            snapshot: Arc::new(Mutex::new(SyncSnapshot {
+                modified,
+                generation: 0,
+                data: Arc::new(data),
+            })),
+            dispatch: Arc::new(Mutex::new(())),
+        }
+    }
+}
 
 /// 数据目录：优先环境变量 DAILYFLOW_HOME（便于测试/AI 指定），否则 %APPDATA%/com.dailyflow.app
 pub fn app_paths() -> PathBuf {
@@ -72,37 +98,62 @@ fn run_gui() {
             tray::setup_tray(app)?;
             let _ = tray::on_tray_event; // 引用避免 unused 警告（由 tauri menu 事件回调触发）
 
-            // 主窗口在 tauri.conf.json 中定义；这里同步便签窗口
-            let v = serde_json::to_value(&data).unwrap_or(serde_json::json!({}));
-            windows::sync_note_windows(app.handle(), &v);
+            app.manage(SyncState::new(data.clone(), store_mtime(&store.path)));
+            windows::sync_note_windows(app.handle(), &data);
             update_tray_from_data(app.handle(), &data);
 
-            // 周期性检测 data.json 外部变更（CLI 写入），推送给前端
+            // 用强类型快照检测 CLI 外部修改；窗口几何变化不触发界面刷新。
             let handle = app.handle().clone();
-            std::thread::spawn(move || {
-                let mut last = store_mtime(&store.path);
-                let mut previous = store
-                    .load()
-                    .and_then(|data| serde_json::to_value(data).map_err(|e| e.to_string()))
-                    .unwrap_or(serde_json::json!({}));
-                loop {
-                    std::thread::sleep(std::time::Duration::from_millis(800));
-                    let cur = store_mtime(&store.path);
-                    if cur != last {
-                        match store.load() {
-                            Ok(data) => {
-                                last = cur;
-                                if let Ok(value) = serde_json::to_value(&data) {
-                                    use tauri::Emitter;
-                                    let _ = handle.emit("data-changed", &value);
-                                    windows::sync_note_windows_with_previous(
-                                        &handle, &previous, &value,
-                                    );
-                                    update_tray_from_data(&handle, &data);
-                                    previous = value;
-                                }
+            let sync_state = app.state::<SyncState>().inner().clone();
+            std::thread::spawn(move || loop {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+                let Some(cur) = store_mtime(&store.path) else {
+                    continue;
+                };
+                let generation = {
+                    let snapshot = sync_state
+                        .snapshot
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    if snapshot.modified == Some(cur) {
+                        continue;
+                    }
+                    snapshot.generation
+                };
+                match store.load() {
+                    Ok(data) => {
+                        let data = Arc::new(data);
+                        let _dispatch = sync_state
+                            .dispatch
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner());
+                        let previous = {
+                            let mut snapshot = sync_state
+                                .snapshot
+                                .lock()
+                                .unwrap_or_else(|poisoned| poisoned.into_inner());
+                            if snapshot.generation != generation {
+                                continue;
                             }
-                            Err(error) => eprintln!("读取外部数据变更失败: {}", error),
+                            let previous = std::mem::replace(&mut snapshot.data, data.clone());
+                            snapshot.modified = Some(cur);
+                            snapshot.generation = snapshot.generation.wrapping_add(1);
+                            previous
+                        };
+                        notify_data_changed(&handle, &previous, &data);
+                    }
+                    Err(error) => {
+                        let _dispatch = sync_state
+                            .dispatch
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner());
+                        let mut snapshot = sync_state
+                            .snapshot
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner());
+                        if snapshot.generation == generation {
+                            snapshot.modified = Some(cur);
+                            eprintln!("读取外部数据变更失败: {}", error);
                         }
                     }
                 }
@@ -150,7 +201,7 @@ fn run_gui() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            commands::fe_load,
+            commands::fe_load_ui,
             commands::fe_cli_path_status,
             commands::fe_cli_path_add,
             commands::fe_save_settings,
@@ -178,6 +229,38 @@ fn run_gui() {
 
 fn store_mtime(p: &std::path::Path) -> Option<std::time::SystemTime> {
     std::fs::metadata(p).and_then(|m| m.modified()).ok()
+}
+
+pub(crate) fn publish_data_change(app: &tauri::AppHandle, data: model::Data) {
+    let state = app.state::<SyncState>().inner().clone();
+    let _dispatch = state
+        .dispatch
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let previous = {
+        let mut snapshot = state
+            .snapshot
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let data = Arc::new(data);
+        let previous = std::mem::replace(&mut snapshot.data, data.clone());
+        snapshot.generation = snapshot.generation.wrapping_add(1);
+        (previous, data)
+    };
+    notify_data_changed(app, &previous.0, &previous.1);
+}
+
+fn notify_data_changed(app: &tauri::AppHandle, previous: &model::Data, data: &model::Data) {
+    let tasks_changed = previous.tasks != data.tasks;
+    if !tasks_changed && !previous.affects_ui_except_tasks(data) {
+        return;
+    }
+    use tauri::Emitter;
+    let _ = app.emit("data-changed", data.ui_snapshot());
+    windows::sync_note_windows_with_previous(app, previous, data);
+    if tasks_changed {
+        update_tray_from_data(app, data);
+    }
 }
 
 /// 依据数据更新托盘图标状态与提示（今日待办数/逾期数）

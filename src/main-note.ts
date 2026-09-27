@@ -14,10 +14,10 @@ let titleEl: HTMLInputElement;
 let bodyEl: HTMLTextAreaElement;
 
 if (noteId) {
-  window.addEventListener("DOMContentLoaded", () => setupNote(noteId));
+  window.addEventListener("DOMContentLoaded", () => { void setupNote(noteId); });
 }
 
-function setupNote(id: string): void {
+async function setupNote(id: string): Promise<void> {
   const app = document.getElementById("app")!;
   document.body.dataset.view = "note";
   document.documentElement.dataset.view = "note";
@@ -69,29 +69,24 @@ function setupNote(id: string): void {
   wrap.className = "note-win";
   wrap.append(bar, status, bodyEl);
 
-  // 监听 CLI 和其他窗口推送的数据；保留尚未写盘的本地输入。
+  // Apply the newest UI snapshot once per frame when writes arrive together.
   // @ts-expect-error Tauri event API
   const { listen } = window.__TAURI__.event;
   let noteRevision = 0;
+  let refreshFrame: number | undefined;
+  let pendingData: Data | undefined;
   let initialLoadComplete = false;
-  listen("data-changed", (evt: { payload: Data }) => {
+  const scheduleApply = () => {
     noteRevision += 1;
-    initialLoadComplete = true;
-    const data = evt.payload;
-    applyTheme(
-      data.settings.theme_preset || "classic-dark",
-      data.settings.theme,
-      data.settings.theme_overrides || {},
-    );
-    applyOpacity(data.settings);
-    const note = data.notes?.find((item) => item.id === id);
-    if (!note) return;
-    if (!bodyDirty && document.activeElement !== bodyEl) bodyEl.value = note.body;
-    if (!titleDirty && document.activeElement !== titleEl) titleEl.value = note.title;
-    wrap.classList.toggle("pinned", note.pinned);
-    pin.classList.toggle("pinned", note.pinned);
-    if (titleDirty || bodyDirty) saveSoon();
-  });
+    if (refreshFrame === undefined) {
+      refreshFrame = requestAnimationFrame(() => {
+        refreshFrame = undefined;
+        const data = pendingData;
+        pendingData = undefined;
+        if (data) applyData(data);
+      });
+    }
+  };
 
   // 右下角缩放手柄（无边框窗口的系统热区不可见，加个可发现的把手）
   const resizeHandle = document.createElement("div");
@@ -190,35 +185,50 @@ function setupNote(id: string): void {
     wrap.className = `note-win note-${c}${pinned ? " pinned" : ""}`;
   }
 
-  // 初始加载内容
-  (async () => {
+  function applyData(data: Data): void {
+    initialLoadComplete = true;
+    applyTheme(
+      data.settings.theme_preset || "classic-dark",
+      data.settings.theme,
+      data.settings.theme_overrides || {},
+    );
+    applyOpacity(data.settings);
+    const n = data.notes.find((x) => x.id === id);
+    if (n) {
+      if (titleDirty && titleEl.value === n.title) titleDirty = false;
+      if (bodyDirty && bodyEl.value === n.body) bodyDirty = false;
+      if (!titleDirty && document.activeElement !== titleEl) titleEl.value = n.title;
+      if (!bodyDirty && document.activeElement !== bodyEl) bodyEl.value = n.body;
+      setColor(n.color || "yellow");
+      wrap.classList.toggle("pinned", n.pinned);
+      pin.classList.toggle("pinned", n.pinned);
+    }
+    if (titleDirty || bodyDirty) saveSoon();
+  }
+
+  async function loadInitialData(): Promise<void> {
     const revision = noteRevision;
     try {
-      const data = await invoke<Data>("fe_load");
+      const data = await invoke<Data>("fe_load_ui");
       if (revision !== noteRevision) return;
-      initialLoadComplete = true;
-      applyTheme(
-        data.settings.theme_preset || "classic-dark",
-        data.settings.theme,
-        data.settings.theme_overrides || {},
-      );
-      applyOpacity(data.settings);
-      const n = data.notes.find((x) => x.id === id);
-      if (n) {
-        if (!titleDirty) titleEl.value = n.title;
-        if (!bodyDirty) bodyEl.value = n.body;
-        setColor(n.color || "yellow");
-        wrap.classList.toggle("pinned", n.pinned);
-        pin.classList.toggle("pinned", n.pinned);
-      }
-      if (titleDirty || bodyDirty) saveSoon();
+      applyData(data);
     } catch (error) {
       console.error("读取便签失败", error);
-      titleEl.disabled = true;
-      bodyEl.disabled = true;
-      setStatus("无法读取便签数据，编辑已暂停。请检查数据文件后重启应用。");
+      if (!initialLoadComplete) {
+        titleEl.disabled = true;
+        bodyEl.disabled = true;
+        setStatus("无法读取便签数据，编辑已暂停。请检查数据文件后重启应用。");
+      } else {
+        setStatus("刷新失败，当前编辑内容仍保留。");
+      }
     }
-  })();
+  }
+
+  await listen("data-changed", (evt: { payload: Data }) => {
+    pendingData = evt.payload;
+    scheduleApply();
+  });
+  void loadInitialData();
 
   // 保存窗口位置/大小
   window.addEventListener("resize", savePos);
