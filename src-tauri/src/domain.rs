@@ -441,20 +441,30 @@ impl Ctx {
                 parent.map(optional_link_id),
             )?;
             let parent_changed = parent_id != original.parent_id;
-            let descendants = task_descendant_ids(d, id);
-            let project_family = task_project_family_ids(d, id);
-            let repeat_family = if parent_changed {
-                task_repeat_family_ids(d, id)
-            } else {
-                HashSet::new()
-            };
+            let location_changed = parent_changed || project_id != original.project_id;
             let next_repeat = repeat
                 .map(RepeatRule::parse)
                 .transpose()?
                 .unwrap_or(original.repeat);
+            let links = TaskLinks::new(d);
+            let descendants = if next_repeat != RepeatRule::None {
+                task_descendant_ids(&links, id)
+            } else {
+                HashSet::new()
+            };
             if next_repeat != RepeatRule::None && !descendants.is_empty() {
                 return Err("含有子任务的任务不能设置重复规则".into());
             }
+            let project_family = if location_changed {
+                task_project_family_ids(&links, id)
+            } else {
+                HashSet::new()
+            };
+            let repeat_family = if parent_changed {
+                task_repeat_family_ids(&links, id)
+            } else {
+                HashSet::new()
+            };
             let t = &mut d.tasks[index];
             let old_start = original.start.clone();
             let old_date = original.date.clone();
@@ -589,7 +599,11 @@ impl Ctx {
             let done = requested.unwrap_or(!d.tasks[index].done);
             let newly_done = done && !d.tasks[index].done;
             let previous = d.tasks[index].clone();
-            let descendants = task_descendant_ids(d, id);
+            let descendants = if newly_done {
+                task_descendant_ids(&TaskLinks::new(d), id)
+            } else {
+                HashSet::new()
+            };
             if newly_done
                 && descendants
                     .iter()
@@ -732,26 +746,37 @@ impl Ctx {
                 })
                 .cloned()
                 .collect();
-            let mut removable_ids = candidates
+            if candidates.is_empty() {
+                return Ok((0, Vec::new(), 0));
+            }
+            let candidate_ids = candidates
                 .iter()
                 .map(|task| task.id.clone())
                 .collect::<HashSet<_>>();
-            loop {
-                let blocked_parents = d
-                    .tasks
-                    .iter()
-                    .filter(|task| {
-                        task.parent_id.as_ref().is_some_and(|parent| {
-                            removable_ids.contains(parent) && !removable_ids.contains(&task.id)
-                        })
-                    })
-                    .filter_map(|task| task.parent_id.clone())
-                    .collect::<HashSet<_>>();
-                if blocked_parents.is_empty() {
-                    break;
+            let links = TaskLinks::new(d);
+            let mut blocked = HashSet::new();
+            let mut pending = Vec::new();
+            for (parent_id, children) in &links.children_by_parent {
+                if candidate_ids.contains(parent_id)
+                    && children
+                        .iter()
+                        .any(|child_id| !candidate_ids.contains(child_id))
+                    && blocked.insert(parent_id.clone())
+                {
+                    pending.push(parent_id.clone());
                 }
-                removable_ids.retain(|id| !blocked_parents.contains(id));
             }
+            while let Some(child_id) = pending.pop() {
+                if let Some(parent_id) = links.parent_by_task.get(&child_id) {
+                    if candidate_ids.contains(parent_id) && blocked.insert(parent_id.clone()) {
+                        pending.push(parent_id.clone());
+                    }
+                }
+            }
+            let removable_ids = candidate_ids
+                .difference(&blocked)
+                .cloned()
+                .collect::<HashSet<_>>();
             let retained_with_children = candidates.len().saturating_sub(removable_ids.len());
             let deleted: Vec<Task> = candidates
                 .into_iter()
@@ -1211,17 +1236,56 @@ fn task_is_descendant(data: &Data, candidate_id: &str, ancestor_id: &str) -> boo
     false
 }
 
-fn task_descendant_ids(data: &Data, task_id: &str) -> HashSet<String> {
+struct TaskLinks {
+    children_by_parent: HashMap<String, Vec<String>>,
+    parent_by_task: HashMap<String, String>,
+    repeat_neighbors: HashMap<String, Vec<String>>,
+}
+
+impl TaskLinks {
+    fn new(data: &Data) -> Self {
+        let mut links = Self {
+            children_by_parent: HashMap::new(),
+            parent_by_task: HashMap::new(),
+            repeat_neighbors: HashMap::new(),
+        };
+        for task in &data.tasks {
+            if let Some(parent_id) = &task.parent_id {
+                links
+                    .children_by_parent
+                    .entry(parent_id.clone())
+                    .or_default()
+                    .push(task.id.clone());
+                links
+                    .parent_by_task
+                    .insert(task.id.clone(), parent_id.clone());
+            }
+            if let Some(previous_id) = &task.repeat_parent_id {
+                links
+                    .repeat_neighbors
+                    .entry(task.id.clone())
+                    .or_default()
+                    .push(previous_id.clone());
+                links
+                    .repeat_neighbors
+                    .entry(previous_id.clone())
+                    .or_default()
+                    .push(task.id.clone());
+            }
+        }
+        links
+    }
+}
+
+fn task_descendant_ids(links: &TaskLinks, task_id: &str) -> HashSet<String> {
     let mut descendants = HashSet::new();
     let mut parents = vec![task_id.to_string()];
     while let Some(parent_id) = parents.pop() {
-        for child in data
-            .tasks
-            .iter()
-            .filter(|task| task.parent_id.as_deref() == Some(parent_id.as_str()))
-        {
-            if descendants.insert(child.id.clone()) {
-                parents.push(child.id.clone());
+        if let Some(children) = links.children_by_parent.get(&parent_id) {
+            for child_id in children {
+                if descendants.insert(child_id.clone()) {
+                    parents.push(child_id.clone());
+                }
             }
         }
     }
@@ -1229,37 +1293,37 @@ fn task_descendant_ids(data: &Data, task_id: &str) -> HashSet<String> {
     descendants
 }
 
-fn task_project_family_ids(data: &Data, task_id: &str) -> HashSet<String> {
+fn task_project_family_ids(links: &TaskLinks, task_id: &str) -> HashSet<String> {
     let mut related = HashSet::new();
     let mut pending = vec![task_id.to_string()];
     while let Some(current_id) = pending.pop() {
-        let previous_repeat = data
-            .task(&current_id)
-            .and_then(|task| task.repeat_parent_id.as_deref());
-        for task in &data.tasks {
-            let linked = task.parent_id.as_deref() == Some(current_id.as_str())
-                || task.repeat_parent_id.as_deref() == Some(current_id.as_str())
-                || previous_repeat.is_some_and(|previous_id| task.id == previous_id);
-            if linked && task.id != task_id && related.insert(task.id.clone()) {
-                pending.push(task.id.clone());
+        if let Some(children) = links.children_by_parent.get(&current_id) {
+            for child_id in children {
+                if child_id != task_id && related.insert(child_id.clone()) {
+                    pending.push(child_id.clone());
+                }
+            }
+        }
+        if let Some(repeats) = links.repeat_neighbors.get(&current_id) {
+            for repeat_id in repeats {
+                if repeat_id != task_id && related.insert(repeat_id.clone()) {
+                    pending.push(repeat_id.clone());
+                }
             }
         }
     }
     related
 }
 
-fn task_repeat_family_ids(data: &Data, task_id: &str) -> HashSet<String> {
+fn task_repeat_family_ids(links: &TaskLinks, task_id: &str) -> HashSet<String> {
     let mut related = HashSet::new();
     let mut pending = vec![task_id.to_string()];
     while let Some(current_id) = pending.pop() {
-        let previous_repeat = data
-            .task(&current_id)
-            .and_then(|task| task.repeat_parent_id.as_deref());
-        for task in &data.tasks {
-            let linked = task.repeat_parent_id.as_deref() == Some(current_id.as_str())
-                || previous_repeat.is_some_and(|previous_id| task.id == previous_id);
-            if linked && task.id != task_id && related.insert(task.id.clone()) {
-                pending.push(task.id.clone());
+        if let Some(repeats) = links.repeat_neighbors.get(&current_id) {
+            for repeat_id in repeats {
+                if repeat_id != task_id && related.insert(repeat_id.clone()) {
+                    pending.push(repeat_id.clone());
+                }
             }
         }
     }

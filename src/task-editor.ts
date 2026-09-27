@@ -51,10 +51,17 @@ export function openTaskEditor(task: Task, opts: RenderOpts): void {
     task.project_id || "",
   );
   const descendants = new Set<string>();
+  const childrenByParent = new Map<string, Task[]>();
+  for (const item of opts.data.tasks) {
+    if (!item.parent_id) continue;
+    const children = childrenByParent.get(item.parent_id) || [];
+    children.push(item);
+    childrenByParent.set(item.parent_id, children);
+  }
   const pending = [task.id];
   while (pending.length) {
     const parentId = pending.pop()!;
-    for (const child of opts.data.tasks.filter((item) => item.parent_id === parentId)) {
+    for (const child of childrenByParent.get(parentId) || []) {
       if (!descendants.has(child.id)) {
         descendants.add(child.id);
         pending.push(child.id);

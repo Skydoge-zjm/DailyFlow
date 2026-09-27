@@ -556,7 +556,7 @@ fn help_json_value() -> Value {
         "version": env!("CARGO_PKG_VERSION"),
         "output_format": "help 默认输出可读文本；help --json 输出此结构化 JSON。其他命令输出单行 JSON：{\"ok\":true,\"data\":...} 或 {\"ok\":false,\"error\":\"...\"}。exit 0=成功 1=失败。",
         "date_formats": ["today", "tomorrow", "yesterday", "+N", "-N", "mon/tue/wed/thu/fri/sat/sun", "周一..周日", "YYYY-MM-DD"],
-        "time_formats": ["9", "930", "9:30", "09:30", "下午3", "18点"],
+        "time_formats": ["9", "930", "9:30", "09:30", "9点半", "下午3", "下午3点一刻", "18点"],
         "commands": {
             "task add <title> [--kind normal|deadline|goal] [--date D] [--start T] [--end T] [--quadrant q1|q2|q3|q4] [--repeat none|daily|weekly|monthly] [--remind T|off] [--priority low|normal|high] [--tags a,b] [--notes S] [--project ID] [--parent TASK_ID]": "添加任务，可选归属项目或设为某任务的子任务。",
             "task list [today|week|all|overdue|goal|deadline|q1|q2|q3|q4|open|YYYY-MM-DD|关键词] [--tag X] [--project ID]": "列出任务，默认 today；q1-q4 按四象限筛选",

@@ -55,7 +55,12 @@ fn relative_date(today: NaiveDate, days: i64, subtract: bool) -> Result<NaiveDat
 
 /// 宽松解析时间：9 / 930 / 9:30 / 09:30 / 9点30 / 下午3点 → HH:MM
 pub fn parse_time(s: &str) -> Result<String, String> {
-    let s = s.trim().replace("：", ":").replace("点", ":");
+    let s = s
+        .trim()
+        .replace("：", ":")
+        .replace("点半", ":30")
+        .replace("点一刻", ":15")
+        .replace("点", ":");
     let s = s.trim_end_matches(':').trim().to_string();
     if s.is_empty() {
         return Ok(String::new());

@@ -1,8 +1,11 @@
 use fs2::FileExt;
 use std::fs::{self, File, OpenOptions};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::model::{Data, DATA_VERSION};
+
+static BACKUP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 struct FileLock {
     file: File,
@@ -185,14 +188,7 @@ impl Store {
     }
 
     fn backup(&self) -> Result<(), String> {
-        let stamp = {
-            // 本地时间戳：YYYYMMDD-HHMMSS
-            let secs = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs() as i64;
-            format_epoch_local(secs)
-        };
+        let stamp = backup_stamp();
         let backups = self.path.parent().unwrap().join("backups");
         let dest = backups.join(format!("data-{}.json", stamp));
         if !dest.exists() {
@@ -223,12 +219,7 @@ impl Store {
                 return Ok(());
             }
         }
-        let stamp = format_epoch_local(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs() as i64,
-        );
+        let stamp = backup_stamp();
         let dest = backups.join(format!("data-corrupt-{}.json", stamp));
         if !dest.exists() {
             fs::write(dest, raw).map_err(|e| e.to_string())?;
@@ -236,6 +227,20 @@ impl Store {
         }
         Ok(())
     }
+}
+
+fn backup_stamp() -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let sequence = BACKUP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!(
+        "{}z{:09}-{:010}-{:020}",
+        format_epoch_local(now.as_secs() as i64),
+        now.subsec_nanos(),
+        std::process::id(),
+        sequence,
+    )
 }
 
 fn prune_backups(dir: &Path, keep: usize) {
