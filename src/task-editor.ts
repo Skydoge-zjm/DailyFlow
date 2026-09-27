@@ -44,6 +44,36 @@ export function openTaskEditor(task: Task, opts: RenderOpts): void {
   );
   const repeat = select([["none", "不重复"], ["daily", "每天"], ["weekly", "每周"], ["monthly", "每月"]], task.repeat || "none");
   const priority = select([["normal", "普通"], ["high", "高"], ["low", "低"]], task.priority);
+  const project = select(
+    [["", "未归属项目"], ...opts.data.projects
+      .filter((item) => !item.archived || item.id === task.project_id)
+      .map((item) => [item.id, item.name] as const)],
+    task.project_id || "",
+  );
+  const descendants = new Set<string>();
+  const pending = [task.id];
+  while (pending.length) {
+    const parentId = pending.pop()!;
+    for (const child of opts.data.tasks.filter((item) => item.parent_id === parentId)) {
+      if (!descendants.has(child.id)) {
+        descendants.add(child.id);
+        pending.push(child.id);
+      }
+    }
+  }
+  const parent = select(
+    [["", "项目根任务"], ...opts.data.tasks
+      .filter((item) => item.id !== task.id && !descendants.has(item.id) && item.repeat === "none")
+      .map((item) => [item.id, item.title] as const)],
+    task.parent_id || "",
+  );
+  const syncLocation = () => {
+    const selectedParent = opts.data.tasks.find((item) => item.id === parent.value);
+    project.disabled = Boolean(selectedParent);
+    if (selectedParent) project.value = selectedParent.project_id || "";
+  };
+  parent.addEventListener("change", syncLocation);
+  syncLocation();
   const tags = input("text", task.tags.join(","));
   const notes = document.createElement("textarea");
   notes.value = task.notes;
@@ -103,6 +133,7 @@ export function openTaskEditor(task: Task, opts: RenderOpts): void {
   form.append(
     field("标题", title),
     el("div", { class: "task-editor-grid" }, field("类型", kind), field("四象限", quadrant)),
+    el("div", { class: "task-editor-grid" }, field("项目", project), field("上级任务", parent)),
     field("日期", date),
     el("div", { class: "task-editor-grid" }, field("开始", start), field("结束", end)),
     el("div", { class: "task-editor-grid" }, field("重复", repeat), field("提醒时间", remind)),
@@ -127,6 +158,8 @@ export function openTaskEditor(task: Task, opts: RenderOpts): void {
       ["end", task.end || "", end.value],
       ["repeat", task.repeat || "none", repeat.value],
       ["remind", task.remind_at || "", remind.value],
+      ["project", task.project_id || "", project.value],
+      ["parent", task.parent_id || "", parent.value],
       ["priority", task.priority, priority.value],
       ["tags", task.tags.join(","), tags.value.trim()],
       ["notes", task.notes, notes.value],

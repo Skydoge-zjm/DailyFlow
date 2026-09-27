@@ -24,11 +24,11 @@
 | `goal` | 长期任务 / 目标 | 可选目标日（`--date ""` 可无日期）：常驻「长期目标」区直到完成 |
 
 ```bash
-dailyflow task add "<标题>" [--kind normal|deadline|goal] [--date D] [--start T] [--end T] [--quadrant q1|q2|q3|q4] [--repeat none|daily|weekly|monthly] [--remind T|off] [--priority low|normal|high] [--tags a,b] [--notes "备注"]
-dailyflow task list [today|week|all|overdue|goal|deadline|q1|q2|q3|q4|open|YYYY-MM-DD|<关键词>] [--tag X]
+dailyflow task add "<标题>" [--kind normal|deadline|goal] [--date D] [--start T] [--end T] [--quadrant q1|q2|q3|q4] [--repeat none|daily|weekly|monthly] [--remind T|off] [--priority low|normal|high] [--tags a,b] [--notes "备注"] [--project PROJECT_ID] [--parent TASK_ID]
+dailyflow task list [today|week|all|overdue|goal|deadline|q1|q2|q3|q4|open|YYYY-MM-DD|<关键词>] [--tag X] [--project PROJECT_ID]
 dailyflow task goals              # = list goal
 dailyflow task get <id>
-dailyflow task edit <id> [--title S] [--kind K] [--date D] [--start T] [--end T] [--quadrant q1|q2|q3|q4] [--repeat none|daily|weekly|monthly] [--remind T|off] [--priority P] [--tags A] [--notes S]
+dailyflow task edit <id> [--title S] [--kind K] [--date D] [--start T] [--end T] [--quadrant q1|q2|q3|q4] [--repeat none|daily|weekly|monthly] [--remind T|off] [--priority P] [--tags A] [--notes S] [--project PROJECT_ID|none] [--parent TASK_ID|none]
 dailyflow task done <id>          # 完成
 dailyflow task undone <id>        # 取消完成
 dailyflow task toggle <id>        # 切换
@@ -47,6 +47,25 @@ dailyflow task clear-done [date]  # 清理已完成
 - `task list week` = 今天起 7 天内（不含过去逾期；逾期用 `list overdue`）。
 - 四象限含义：`q1` 重要且紧急、`q2` 重要不紧急、`q3` 不重要但紧急、`q4` 不重要不紧急。旧任务默认 `q2`。
 - `created_at`/`completed_at` 为**本地时间**（无时区后缀），格式 `YYYY-MM-DDTHH:MM:SS`。
+
+### 项目
+
+```bash
+dailyflow project add "发布移动端版本" [--description "完成首个公开版本"]
+dailyflow project list [--archived]
+dailyflow project get <project_id>
+dailyflow project edit <project_id> [--name "新名称"] [--description "项目说明"]
+dailyflow project archive|unarchive <project_id>
+dailyflow project delete <project_id>
+```
+
+- 项目 ID 使用 `p_xxxxxx`；项目是可选组织层，任务仍保留自己的日期和四象限。
+- 新任务可用 `--project <project_id>` 归属项目；`--parent <task_id>` 建为子任务，并继承上级任务所属项目。
+- 编辑时 `--parent none` 将任务移动到项目根层级；根任务用 `--project none` 移出项目。子任务不能单独改到其他项目。
+- 删除仍有关联任务或可撤销记录的项目会被拒绝；归档会保留项目及其任务。
+- 有子任务的任务不能删除；清理已完成任务时，仍含未清子任务的父任务会保留。
+- 完成父任务前必须先完成所有后代子任务；新增未完成子任务或恢复子任务时，上级任务会自动恢复未完成状态。
+- 重复任务不允许拥有子任务；重复任务的下次实例会沿用同一项目和上级任务。
 
 ### 桌面便签
 

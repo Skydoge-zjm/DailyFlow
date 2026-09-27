@@ -41,6 +41,7 @@ fn print_help_text() {
     let commands = help["commands"].as_object().expect("help commands object");
     let sections = [
         ("任务与日程", "task "),
+        ("项目", "project "),
         ("便签", "note "),
         ("悬浮窗", "widget "),
         ("主题", "theme "),
@@ -255,13 +256,13 @@ fn dispatch(ctx: &Ctx, args: &[String]) -> Result<Value, String> {
             let value_flags = match sub.as_str() {
                 "add" => &[
                     "date", "start", "end", "priority", "tags", "notes", "kind", "quadrant",
-                    "repeat", "remind",
+                    "repeat", "remind", "project", "parent",
                 ][..],
                 "edit" => &[
                     "title", "date", "start", "end", "priority", "tags", "notes", "kind",
-                    "quadrant", "repeat", "remind",
+                    "quadrant", "repeat", "remind", "project", "parent",
                 ][..],
-                "list" | "ls" | "today" | "goals" => &["tag"][..],
+                "list" | "ls" | "today" | "goals" => &["tag", "project"][..],
                 _ => &[],
             };
             validate_flags(r, value_flags, &[])?;
@@ -290,15 +291,37 @@ fn dispatch(ctx: &Ctx, args: &[String]) -> Result<Value, String> {
                         quadrant: flag(r, "quadrant").unwrap_or_default(),
                         repeat: flag(r, "repeat").unwrap_or_default(),
                         remind: flag(r, "remind"),
+                        project: flag(r, "project").unwrap_or_default(),
+                        parent: flag(r, "parent").unwrap_or_default(),
                     })
                 }
                 "list" | "ls" => {
                     let scope =
                         first_positional(r, value_flags, &[]).unwrap_or_else(|| "today".into());
-                    ctx.task_list(&scope, &flag(r, "tag").unwrap_or_default())
+                    ctx.task_list_in_project(
+                        &scope,
+                        &flag(r, "tag").unwrap_or_default(),
+                        &flag(r, "project").unwrap_or_default(),
+                    )
                 }
-                "today" => ctx.task_list("today", &flag(r, "tag").unwrap_or_default()),
-                "goals" => ctx.task_list("goal", &flag(r, "tag").unwrap_or_default()),
+                "today" => {
+                    let tag = flag(r, "tag").unwrap_or_default();
+                    let project = flag(r, "project").unwrap_or_default();
+                    if project.is_empty() {
+                        ctx.task_list("today", &tag)
+                    } else {
+                        ctx.task_list_in_project("today", &tag, &project)
+                    }
+                }
+                "goals" => {
+                    let tag = flag(r, "tag").unwrap_or_default();
+                    let project = flag(r, "project").unwrap_or_default();
+                    if project.is_empty() {
+                        ctx.task_list("goal", &tag)
+                    } else {
+                        ctx.task_list_in_project("goal", &tag, &project)
+                    }
+                }
                 "get" => ctx.task_get(&need(r, 0, "id")?),
                 "edit" => {
                     let id = first_positional(r, value_flags, &[])
@@ -314,6 +337,8 @@ fn dispatch(ctx: &Ctx, args: &[String]) -> Result<Value, String> {
                     let quadrant = flag(r, "quadrant");
                     let repeat = flag(r, "repeat");
                     let remind = flag(r, "remind");
+                    let project = flag(r, "project");
+                    let parent = flag(r, "parent");
                     ctx.task_edit(
                         &id,
                         TaskEditPatch {
@@ -328,6 +353,8 @@ fn dispatch(ctx: &Ctx, args: &[String]) -> Result<Value, String> {
                             quadrant: quadrant.as_deref(),
                             repeat: repeat.as_deref(),
                             remind: remind.as_deref(),
+                            project: project.as_deref(),
+                            parent: parent.as_deref(),
                         },
                     )
                 }
@@ -340,6 +367,52 @@ fn dispatch(ctx: &Ctx, args: &[String]) -> Result<Value, String> {
                     ctx.task_clear_done(&opt_positional(r, 0).unwrap_or_default())
                 }
                 other => Err(format!("未知 task 子命令: {} (见 help)", other)),
+            }
+        }
+
+        // ---------------- projects ----------------
+        "project" | "projects" => {
+            let sub = need(rest, 0, "project 子命令")?.to_lowercase();
+            let r = &rest[1..];
+            let value_flags = match sub.as_str() {
+                "add" => &["description"][..],
+                "edit" => &["name", "description"][..],
+                _ => &[][..],
+            };
+            let boolean_flags = match sub.as_str() {
+                "list" | "ls" => &["archived"][..],
+                _ => &[][..],
+            };
+            validate_flags(r, value_flags, boolean_flags)?;
+            let (min_positionals, max_positionals) = match sub.as_str() {
+                "add" | "get" | "edit" | "archive" | "unarchive" | "delete" | "del" => (1, 1),
+                "list" | "ls" => (0, 0),
+                _ => (0, 0),
+            };
+            validate_positional_count(
+                r,
+                value_flags,
+                boolean_flags,
+                min_positionals,
+                max_positionals,
+            )?;
+            match sub.as_str() {
+                "add" => ctx.project_add(
+                    &need(r, 0, "名称")?,
+                    &flag(r, "description").unwrap_or_default(),
+                ),
+                "list" | "ls" => ctx.project_list(has_flag(r, "archived")),
+                "get" => ctx.project_get(&need(r, 0, "项目ID")?),
+                "edit" => ctx.project_edit(
+                    &need(r, 0, "项目ID")?,
+                    flag(r, "name").as_deref(),
+                    flag(r, "description").as_deref(),
+                ),
+                "archive" | "unarchive" => {
+                    ctx.project_archive(&need(r, 0, "项目ID")?, sub == "archive")
+                }
+                "delete" | "del" => ctx.project_delete(&need(r, 0, "项目ID")?),
+                other => Err(format!("未知 project 子命令: {} (见 help)", other)),
             }
         }
 
@@ -485,15 +558,21 @@ fn help_json_value() -> Value {
         "date_formats": ["today", "tomorrow", "yesterday", "+N", "-N", "mon/tue/wed/thu/fri/sat/sun", "周一..周日", "YYYY-MM-DD"],
         "time_formats": ["9", "930", "9:30", "09:30", "下午3", "18点"],
         "commands": {
-            "task add <title> [--kind normal|deadline|goal] [--date D] [--start T] [--end T] [--quadrant q1|q2|q3|q4] [--repeat none|daily|weekly|monthly] [--remind T|off] [--priority low|normal|high] [--tags a,b] [--notes S]": "添加任务。四象限：q1 重要且紧急，q2 重要不紧急（默认），q3 不重要但紧急，q4 不重要不紧急。",
-            "task list [today|week|all|overdue|goal|deadline|q1|q2|q3|q4|open|YYYY-MM-DD|关键词] [--tag X]": "列出任务，默认 today；q1-q4 按四象限筛选",
+            "task add <title> [--kind normal|deadline|goal] [--date D] [--start T] [--end T] [--quadrant q1|q2|q3|q4] [--repeat none|daily|weekly|monthly] [--remind T|off] [--priority low|normal|high] [--tags a,b] [--notes S] [--project ID] [--parent TASK_ID]": "添加任务，可选归属项目或设为某任务的子任务。",
+            "task list [today|week|all|overdue|goal|deadline|q1|q2|q3|q4|open|YYYY-MM-DD|关键词] [--tag X] [--project ID]": "列出任务，默认 today；q1-q4 按四象限筛选",
             "task get <id>": "查看单个任务",
-            "task edit <id> [--title|--date|--start|--end|--kind|--quadrant|--priority|--tags|--notes|--repeat|--remind S]": "编辑任务；--quadrant 设置四象限；--remind off 关闭提醒；--repeat none 关闭重复",
+            "task edit <id> [--title S] [--date D] [--start T] [--end T] [--project ID|none] [--parent ID|none] [--kind K] [--quadrant Q] [--priority P] [--tags A] [--notes S] [--repeat R] [--remind T|off]": "编辑任务；子任务项目归属跟随上级任务",
             "task done|undone|toggle <id>": "完成/取消完成/切换",
             "task delete <id>": "删除任务",
             "task move <id> <date>": "改期",
             "task goals": "列出所有长期任务",
             "task clear-done [date]": "清理已完成任务",
+            "project add <name> [--description S]": "创建项目",
+            "project list [--archived]": "列出项目；--archived 同时显示归档项目",
+            "project get <id>": "查看项目及其任务树数据",
+            "project edit <id> [--name S] [--description S]": "修改项目名称或说明",
+            "project archive|unarchive <id>": "归档或恢复项目",
+            "project delete <id>": "删除无关联任务的项目",
             "note add <body> [--title T] [--color yellow|green|blue|pink|purple|dark]": "新建桌面便签",
             "note list": "列出便签",
             "note edit <id> [--title T] [--body S] [--color C]": "编辑便签",
@@ -516,6 +595,9 @@ fn help_json_value() -> Value {
             "dailyflow task add \"review PR\" --priority high --date tomorrow",
             "dailyflow task add \"论文终稿\" --kind deadline --date +7 --priority high",
             "dailyflow task add \"每天读 30 分钟书\" --kind goal --tags 自我提升",
+            "dailyflow project add \"发布移动端版本\" --description \"完成首个公开版本\"",
+            "dailyflow task add \"整理崩溃日志\" --project p_xxxxxx",
+            "dailyflow task add \"复现登录问题\" --parent t_xxxxxx",
             "dailyflow task done t_a1b2c3",
             "dailyflow note add \"明天带伞\" --color blue",
             "dailyflow day today",

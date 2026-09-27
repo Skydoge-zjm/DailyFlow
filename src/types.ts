@@ -3,8 +3,19 @@ export type TaskKind = "normal" | "deadline" | "goal";
 export type RepeatRule = "none" | "daily" | "weekly" | "monthly";
 export type Quadrant = "q1" | "q2" | "q3" | "q4";
 
+export interface Project {
+  id: string;
+  name: string;
+  description: string;
+  archived: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Task {
   id: string;
+  project_id?: string | null;
+  parent_id?: string | null;
   title: string;
   notes: string;
   date: string; // normal=归属日; deadline=截止日; goal=可选目标日(""=无)
@@ -58,6 +69,7 @@ export interface Settings {
 export interface Data {
   version: number;
   tasks: Task[];
+  projects: Project[];
   notes: Note[];
   settings: Settings;
 }

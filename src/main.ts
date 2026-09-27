@@ -44,7 +44,7 @@ const DEFAULT_SETTINGS: Settings = {
 // 主窗口逻辑（body[data-view] 缺省为 main）
 const appEl = document.getElementById("app")!;
 
-let data: Data = { version: 2, tasks: [], notes: [], settings: { ...DEFAULT_SETTINGS } };
+let data: Data = { version: 3, tasks: [], projects: [], notes: [], settings: { ...DEFAULT_SETTINGS } };
 let hasLoadedData = false;
 let dataRevision = 0;
 let reloadGeneration = 0;
@@ -72,9 +72,10 @@ function previewData(): Data {
     { id: "preview-5", title: "建立每周复盘习惯", notes: "", date: "", start: null, end: null, done: false, priority: "low", kind: "goal", quadrant: "q2", repeat: "none", tags: [], created_at: "", completed_at: null },
   ];
   return {
-    version: 2,
+    version: 3,
     settings: { ...DEFAULT_SETTINGS },
     tasks,
+    projects: [],
     notes: [
       { id: "preview-note-1", title: "灵感收集", body: "把值得保留的想法先放在这里。", color: "yellow", x: 0, y: 0, w: 260, h: 220, pinned: false, visible: true, created_at: "", updated_at: "" },
       { id: "preview-note-2", title: "下次会议", body: "确认发布节奏和体验细节。", color: "blue", x: 0, y: 0, w: 260, h: 220, pinned: true, visible: false, created_at: "", updated_at: "" },

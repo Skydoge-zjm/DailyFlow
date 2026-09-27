@@ -1,6 +1,6 @@
 ---
 name: dailyflow-cli
-description: 当 DailyFlow 已安装，且用户要求查询或修改任务、日程、目标、桌面便签、提醒、悬浮窗或主题设置时，使用 DailyFlow CLI 完成操作。
+description: 当 DailyFlow 已安装，且用户要求查询或修改项目、任务、日程、目标、桌面便签、提醒、悬浮窗或主题设置时，使用 DailyFlow CLI 完成操作。
 ---
 
 # 使用 DailyFlow CLI
@@ -26,12 +26,14 @@ description: 当 DailyFlow 已安装，且用户要求查询或修改任务、�
 | 查看截止事项、长期目标或指定日期任务 | `dailyflow task list deadline`、`dailyflow task list goal`、`dailyflow task list <日期>` |
 | 按关键词查找任务，或查看某任务详情 | `dailyflow task list "<关键词>"`；`dailyflow task get <任务ID>` |
 | 查看统计或四象限矩阵 | `dailyflow stats [<日期>]`；`dailyflow matrix [<日期或 all>]` |
-| 新增待办或日程 | `dailyflow task add "<标题>" [--date <日期>] [--start <时间>] [--end <时间>] [--priority <优先级>] [--tags <标签列表>] [--notes "<备注>"]` |
+| 新增待办或日程 | `dailyflow task add "<标题>" [--date <日期>] [--start <时间>] [--end <时间>] [--priority <优先级>] [--tags <标签列表>] [--notes "<备注>"] [--project <项目ID>] [--parent <上级任务ID>]` |
 | 新增截止事项 | `dailyflow task add "<标题>" --kind deadline --date <日期>` |
 | 新增长期目标 | `dailyflow task add "<标题>" --kind goal [--date <日期>]` |
+| 管理项目或查看项目任务 | `dailyflow project add "<名称>"`、`dailyflow project list`、`dailyflow project get <项目ID>`、`dailyflow project edit <项目ID>`、`dailyflow project archive <项目ID>`、`dailyflow project delete <项目ID>` |
+| 将任务归入项目或添加子任务 | `dailyflow task add "<标题>" --project <项目ID>`；`dailyflow task add "<标题>" --parent <上级任务ID>`；按项目筛选用 `dailyflow task list all --project <项目ID>` |
 | 设置提醒或重复规则 | 新增时用 `dailyflow task add "<标题>" [--remind <时间或 off>] [--repeat <规则>]`；编辑时用 `dailyflow task edit <任务ID> [--remind <时间或 off>] [--repeat <规则>]` |
 | 完成、恢复或切换任务状态 | `dailyflow task done <任务ID>`、`dailyflow task undone <任务ID>`、`dailyflow task toggle <任务ID>` |
-| 改期或修改任务内容 | `dailyflow task move <任务ID> <日期>`；编辑用 `dailyflow task edit <任务ID> [--title "<标题>"] [--date <日期>] [--start <时间>] [--end <时间>] [--kind <类型>] [--quadrant <象限>] [--priority <优先级>] [--tags <标签列表>] [--notes "<备注>"] [--repeat <规则>] [--remind <时间或 off>]` |
+| 改期或修改任务内容 | `dailyflow task move <任务ID> <日期>`；编辑用 `dailyflow task edit <任务ID> [--title "<标题>"] [--date <日期>] [--start <时间>] [--end <时间>] [--kind <类型>] [--quadrant <象限>] [--priority <优先级>] [--tags <标签列表>] [--notes "<备注>"] [--repeat <规则>] [--remind <时间或 off>] [--project <项目ID或 none>] [--parent <上级任务ID或 none>]` |
 | 删除任务、清理已完成任务或撤销删除 | `dailyflow task delete <任务ID>`、`dailyflow task clear-done [<日期>]`、`dailyflow undo [<被删项目ID>]` |
 | 查看或新建便签 | `dailyflow note list`；`dailyflow note add "<内容>" [--title "<标题>"] [--color <颜色>]` |
 | 修改或删除便签 | `dailyflow note edit <便签ID> [--title "<标题>"] [--body "<内容>"] [--color <颜色>]`；`dailyflow note delete <便签ID>` |
@@ -45,6 +47,8 @@ description: 当 DailyFlow 已安装，且用户要求查询或修改任务、�
 ## 参数说明
 
 - `<任务ID>` 和 `<便签ID>` 必须使用 CLI 返回的 ID，例如 `t_a1b2c3`；不要用标题代替 ID 执行修改或删除。
+- 项目 ID 使用 `p_xxxxxx`。子任务通过 `parent_id` 形成树并继承上级任务的项目；子任务不能单独归到其他项目。
+- 完成父任务前需先完成全部子任务；新增未完成子任务或恢复子任务时，上级任务会自动恢复未完成状态。删除有子任务的任务会失败，清理时仍含未完成子任务的父任务会保留。
 - `normal` 表示普通任务或日程，`deadline` 表示有截止日期的事项，`goal` 表示长期目标；目标日期可选。`--kind` 可用 `normal`、`deadline`、`goal`；`--quadrant` 可用 `q1` 到 `q4`；`--repeat` 可用 `none`、`daily`、`weekly`、`monthly`；`--priority` 可用 `low`、`normal`、`high`。便签颜色可用 `yellow`、`green`、`blue`、`pink`、`purple`、`dark`。
 - `task list` 的常用范围有 `today`、`week`、`all`、`overdue`、`goal`、`deadline`、`open`、`q1` 至 `q4`，也可以传日期或关键词。
 - 日期常用格式包括 `today`、`tomorrow`、`+3`、星期名称和 `YYYY-MM-DD`；时间常用格式包括 `9`、`930`、`9:30` 和 `09:30`。完整格式及本地化写法以 `dailyflow help` 和 `docs/CLI.md` 为准。
@@ -54,6 +58,7 @@ description: 当 DailyFlow 已安装，且用户要求查询或修改任务、�
 ## 谨慎修改数据
 
 - 对明确指定且目标清楚的删除请求，直接执行 `task delete`、`note delete` 或 `task clear-done`，无需再次向用户确认。只有目标或清理范围不明确时才追问；不要把未请求的清理当作附带操作。
+- 删除项目前先移出关联任务，并处理指向这些任务的撤销记录；归档会保留项目及其任务。删除父任务前先查看并处理其子任务。
 - 按当前 shell 的引用规则，将标题、备注等用户文本作为带引号的参数传入。不要把未经信任的文本拼接进可执行命令。
 - 任务设置 `--start` 后，默认会在该时间提醒。用户不需要提醒时，使用 `--remind off`。只有桌面应用运行时才会发送提醒。
 - 完成重复任务后，CLI 会创建下一次任务。除非用户另有要求，不要再手动创建重复项。

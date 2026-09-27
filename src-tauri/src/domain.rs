@@ -1,7 +1,9 @@
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use crate::model::{Data, Note, Priority, Quadrant, RepeatRule, Task, UndoEntry, NOTE_COLORS};
+use crate::model::{
+    Data, Note, Priority, Project, Quadrant, RepeatRule, Task, UndoEntry, NOTE_COLORS,
+};
 use crate::store::Store;
 use crate::timeparse::{now_iso, parse_date, parse_time, today_str, weekday_cn};
 
@@ -24,6 +26,8 @@ pub struct TaskAddInput {
     pub quadrant: String,
     pub repeat: String,
     pub remind: Option<String>,
+    pub project: String,
+    pub parent: String,
 }
 
 #[derive(Default)]
@@ -39,6 +43,8 @@ pub struct TaskEditPatch<'a> {
     pub quadrant: Option<&'a str>,
     pub repeat: Option<&'a str>,
     pub remind: Option<&'a str>,
+    pub project: Option<&'a str>,
+    pub parent: Option<&'a str>,
 }
 
 fn ok(v: Value) -> CmdResult {
@@ -67,6 +73,134 @@ impl Ctx {
 
     // ---------- tasks ----------
 
+    pub fn project_add(&self, name: &str, description: &str) -> CmdResult {
+        let name = name.trim().to_string();
+        if name.is_empty() {
+            return err("项目名称不能为空".into());
+        }
+        let description = description.trim().to_string();
+        let project = self.store.with_lock(2000, move |data| {
+            if data
+                .projects
+                .iter()
+                .any(|project| project.name.eq_ignore_ascii_case(&name))
+            {
+                return Err(format!("项目名称已存在: {}", name));
+            }
+            let now = now_iso();
+            let project = Project {
+                id: data.gen_unique_id("p"),
+                name,
+                description,
+                archived: false,
+                created_at: now.clone(),
+                updated_at: now,
+            };
+            data.projects.push(project.clone());
+            Ok(project)
+        })?;
+        ok(json!(project))
+    }
+
+    pub fn project_list(&self, include_archived: bool) -> CmdResult {
+        let mut projects = self.load()?.projects;
+        if !include_archived {
+            projects.retain(|project| !project.archived);
+        }
+        projects.sort_by(|left, right| {
+            left.archived
+                .cmp(&right.archived)
+                .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+                .then(left.id.cmp(&right.id))
+        });
+        ok(json!({ "count": projects.len(), "projects": projects }))
+    }
+
+    pub fn project_get(&self, id: &str) -> CmdResult {
+        let data = self.load()?;
+        let project = data
+            .project(id)
+            .ok_or_else(|| format!("项目不存在: {}", id))?;
+        let tasks: Vec<&Task> = data
+            .tasks
+            .iter()
+            .filter(|task| task.project_id.as_deref() == Some(id))
+            .collect();
+        ok(json!({ "project": project, "count": tasks.len(), "tasks": tasks }))
+    }
+
+    pub fn project_edit(
+        &self,
+        id: &str,
+        name: Option<&str>,
+        description: Option<&str>,
+    ) -> CmdResult {
+        let project = self.store.with_lock(2000, |data| {
+            if let Some(name) = name {
+                if name.trim().is_empty() {
+                    return Err("项目名称不能为空".into());
+                }
+                if data
+                    .projects
+                    .iter()
+                    .any(|item| item.id != id && item.name.eq_ignore_ascii_case(name.trim()))
+                {
+                    return Err(format!("项目名称已存在: {}", name.trim()));
+                }
+            }
+            let project = data
+                .project_mut(id)
+                .ok_or_else(|| format!("项目不存在: {}", id))?;
+            if let Some(name) = name {
+                project.name = name.trim().to_string();
+            }
+            if let Some(description) = description {
+                project.description = description.trim().to_string();
+            }
+            project.updated_at = now_iso();
+            Ok(project.clone())
+        })?;
+        ok(json!(project))
+    }
+
+    pub fn project_archive(&self, id: &str, archived: bool) -> CmdResult {
+        let project = self.store.with_lock(2000, |data| {
+            let project = data
+                .project_mut(id)
+                .ok_or_else(|| format!("项目不存在: {}", id))?;
+            project.archived = archived;
+            project.updated_at = now_iso();
+            Ok(project.clone())
+        })?;
+        ok(json!(project))
+    }
+
+    pub fn project_delete(&self, id: &str) -> CmdResult {
+        self.store.with_lock(2000, |data| {
+            if data.project(id).is_none() {
+                return Err(format!("项目不存在: {}", id));
+            }
+            let has_tasks = data
+                .tasks
+                .iter()
+                .any(|task| task.project_id.as_deref() == Some(id));
+            let undo_references_project = data.undo.as_ref().is_some_and(|undo| {
+                undo.deleted_tasks
+                    .iter()
+                    .chain(&undo.tasks)
+                    .any(|task| task.project_id.as_deref() == Some(id))
+            });
+            if has_tasks || undo_references_project {
+                return Err(
+                    "项目仍有关联任务或可撤销记录，不能删除；请先移出关联任务并处理撤销记录".into(),
+                );
+            }
+            data.projects.retain(|item| item.id != id);
+            Ok(())
+        })?;
+        ok(json!({ "deleted": id }))
+    }
+
     pub fn task_add(&self, input: TaskAddInput) -> CmdResult {
         let TaskAddInput {
             title,
@@ -80,6 +214,8 @@ impl Ctx {
             quadrant,
             repeat,
             remind,
+            project,
+            parent,
         } = input;
         if title.trim().is_empty() {
             return err("标题不能为空".into());
@@ -125,9 +261,18 @@ impl Ctx {
         let title_s = title.trim().to_string();
         self.store
             .with_lock(2000, move |d| {
+                let (parent_id, project_id) = resolve_task_location(
+                    d,
+                    None,
+                    None,
+                    (!project.trim().is_empty()).then(|| optional_link_id(&project)),
+                    Some(optional_link_id(&parent)),
+                )?;
                 let id = d.gen_unique_id("t");
                 let task = Task {
                     id: id.clone(),
+                    project_id,
+                    parent_id,
                     title: title_s,
                     notes: notes_s,
                     date: date_s.clone(),
@@ -150,7 +295,11 @@ impl Ctx {
                     created_at: now_iso(),
                     completed_at: None,
                 };
+                let parent_for_reopen = task.parent_id.clone();
                 d.tasks.push(task);
+                if let Some(parent_id) = parent_for_reopen.as_deref() {
+                    reopen_completed_ancestors(d, parent_id);
+                }
                 let t = d.tasks.last().unwrap().clone();
                 Ok((id, t))
             })
@@ -158,6 +307,10 @@ impl Ctx {
     }
 
     pub fn task_list(&self, scope: &str, tag: &str) -> CmdResult {
+        self.task_list_in_project(scope, tag, "")
+    }
+
+    pub fn task_list_in_project(&self, scope: &str, tag: &str, project_id: &str) -> CmdResult {
         let mut d = self.load()?;
         let today = today_str();
         let mut tasks: Vec<Task> = d.tasks.drain(..).collect();
@@ -203,7 +356,8 @@ impl Ctx {
                 },
             };
             let tag_ok = tag.is_empty() || t.tags.iter().any(|x| x == tag);
-            scope_ok && tag_ok
+            let project_ok = project_id.is_empty() || t.project_id.as_deref() == Some(project_id);
+            scope_ok && tag_ok && project_ok
         });
         ok(json!({ "count": tasks.len(), "tasks": tasks }))
     }
@@ -269,14 +423,42 @@ impl Ctx {
             quadrant,
             repeat,
             remind,
+            project,
+            parent,
         } = patch;
         let task = self.store.with_lock(2000, |d| {
-            let t = d
-                .task_mut(id)
+            let index = d
+                .tasks
+                .iter()
+                .position(|task| task.id == id)
                 .ok_or_else(|| format!("任务不存在: {}", id))?;
-            let old_start = t.start.clone();
-            let old_date = t.date.clone();
-            let old_reminder = t.remind_at.clone();
+            let original = d.tasks[index].clone();
+            let (parent_id, project_id) = resolve_task_location(
+                d,
+                Some(id),
+                Some(&original),
+                project.map(optional_link_id),
+                parent.map(optional_link_id),
+            )?;
+            let parent_changed = parent_id != original.parent_id;
+            let descendants = task_descendant_ids(d, id);
+            let project_family = task_project_family_ids(d, id);
+            let repeat_family = if parent_changed {
+                task_repeat_family_ids(d, id)
+            } else {
+                HashSet::new()
+            };
+            let next_repeat = repeat
+                .map(RepeatRule::parse)
+                .transpose()?
+                .unwrap_or(original.repeat);
+            if next_repeat != RepeatRule::None && !descendants.is_empty() {
+                return Err("含有子任务的任务不能设置重复规则".into());
+            }
+            let t = &mut d.tasks[index];
+            let old_start = original.start.clone();
+            let old_date = original.date.clone();
+            let old_reminder = original.remind_at.clone();
             if let Some(v) = title {
                 if !v.trim().is_empty() {
                     t.title = v.trim().to_string();
@@ -329,9 +511,7 @@ impl Ctx {
             if date.is_some() && t.date.is_empty() && t.kind != crate::model::TaskKind::Goal {
                 return Err("只有长期目标可以清空日期".into());
             }
-            if let Some(value) = repeat {
-                t.repeat = RepeatRule::parse(value)?;
-            }
+            t.repeat = next_repeat;
             if t.kind == crate::model::TaskKind::Goal && t.repeat != RepeatRule::None {
                 return Err("长期目标不能设置重复规则".into());
             }
@@ -370,7 +550,23 @@ impl Ctx {
             } else {
                 None
             };
-            Ok(t.clone())
+            t.parent_id = parent_id.clone();
+            t.project_id = project_id.clone();
+            let updated = t.clone();
+            for child in &mut d.tasks {
+                if project_family.contains(&child.id) {
+                    child.project_id = project_id.clone();
+                }
+                if repeat_family.contains(&child.id) {
+                    child.parent_id = parent_id.clone();
+                }
+            }
+            if !original.done && parent_changed {
+                if let Some(parent_id) = parent_id.as_deref() {
+                    reopen_completed_ancestors(d, parent_id);
+                }
+            }
+            Ok(updated)
         })?;
         ok(json!(task))
     }
@@ -393,6 +589,17 @@ impl Ctx {
             let done = requested.unwrap_or(!d.tasks[index].done);
             let newly_done = done && !d.tasks[index].done;
             let previous = d.tasks[index].clone();
+            let descendants = task_descendant_ids(d, id);
+            if newly_done
+                && descendants
+                    .iter()
+                    .any(|child_id| d.task(child_id).is_some_and(|child| !child.done))
+            {
+                return Err("请先完成全部子任务，再完成父任务".into());
+            }
+            if newly_done && previous.repeat != RepeatRule::None && !descendants.is_empty() {
+                return Err("含有子任务的任务不能设置重复规则".into());
+            }
             let generated_date = if previous.done && !done && previous.repeat != RepeatRule::None {
                 previous
                     .completed_at
@@ -409,6 +616,11 @@ impl Ctx {
             } else {
                 None
             };
+            if !done {
+                if let Some(parent_id) = d.tasks[index].parent_id.clone() {
+                    reopen_completed_ancestors(d, &parent_id);
+                }
+            }
             let task = d.tasks[index].clone();
             if let Some(date) = generated_date {
                 d.tasks
@@ -430,6 +642,9 @@ impl Ctx {
                 child.reminded_at = None;
                 child.repeat_parent_id = Some(task.id.clone());
                 d.tasks.push(child);
+                if let Some(parent_id) = task.parent_id.as_deref() {
+                    reopen_completed_ancestors(d, parent_id);
+                }
             }
             Ok(task)
         })?;
@@ -445,6 +660,9 @@ impl Ctx {
                 .ok_or_else(|| format!("任务不存在: {}", id))?;
             if matches.next().is_some() {
                 return Err(format!("任务 ID 重复，拒绝删除以免误删: {}", id));
+            }
+            if task_has_children(d, id) {
+                return Err("该任务仍有子任务，请先移动或删除子任务".into());
             }
             let mut snapshot = self.snapshot_undo("删除任务");
             snapshot.deleted_tasks.push(deleted);
@@ -504,7 +722,7 @@ impl Ctx {
             Some(parse_date(date)?.format("%Y-%m-%d").to_string())
         };
         let removed = self.store.with_lock(2000, |d| {
-            let deleted: Vec<Task> = d
+            let candidates: Vec<Task> = d
                 .tasks
                 .iter()
                 .filter(|t| {
@@ -513,6 +731,31 @@ impl Ctx {
                         && date_s.as_deref().map(|x| t.date == x).unwrap_or(true)
                 })
                 .cloned()
+                .collect();
+            let mut removable_ids = candidates
+                .iter()
+                .map(|task| task.id.clone())
+                .collect::<HashSet<_>>();
+            loop {
+                let blocked_parents = d
+                    .tasks
+                    .iter()
+                    .filter(|task| {
+                        task.parent_id.as_ref().is_some_and(|parent| {
+                            removable_ids.contains(parent) && !removable_ids.contains(&task.id)
+                        })
+                    })
+                    .filter_map(|task| task.parent_id.clone())
+                    .collect::<HashSet<_>>();
+                if blocked_parents.is_empty() {
+                    break;
+                }
+                removable_ids.retain(|id| !blocked_parents.contains(id));
+            }
+            let retained_with_children = candidates.len().saturating_sub(removable_ids.len());
+            let deleted: Vec<Task> = candidates
+                .into_iter()
+                .filter(|task| removable_ids.contains(&task.id))
                 .collect();
             let mut id_counts = HashMap::new();
             for task in &d.tasks {
@@ -535,16 +778,16 @@ impl Ctx {
             if removed > 0 {
                 let mut snapshot = self.snapshot_undo("清理已完成任务");
                 snapshot.deleted_tasks = deleted;
-                d.tasks.retain(|t| {
-                    !(t.done
-                        && t.kind != crate::model::TaskKind::Goal
-                        && date_s.as_deref().map(|x| t.date == x).unwrap_or(true))
-                });
+                d.tasks.retain(|task| !removable_ids.contains(&task.id));
                 d.undo = Some(snapshot);
             }
-            Ok((removed, deleted_ids))
+            Ok((removed, deleted_ids, retained_with_children))
         })?;
-        ok(json!({ "removed": removed.0, "deleted_ids": removed.1 }))
+        ok(json!({
+            "removed": removed.0,
+            "deleted_ids": removed.1,
+            "retained_with_children": removed.2,
+        }))
     }
 
     // ---------- notes ----------
@@ -898,6 +1141,158 @@ impl Ctx {
     }
 }
 
+fn optional_link_id(value: &str) -> Option<String> {
+    let value = value.trim();
+    if value.is_empty() || matches!(value.to_ascii_lowercase().as_str(), "none" | "off" | "null") {
+        None
+    } else {
+        Some(value.to_string())
+    }
+}
+
+fn resolve_task_location(
+    data: &Data,
+    task_id: Option<&str>,
+    existing: Option<&Task>,
+    project_patch: Option<Option<String>>,
+    parent_patch: Option<Option<String>>,
+) -> Result<(Option<String>, Option<String>), String> {
+    let old_project = existing.and_then(|task| task.project_id.clone());
+    let old_parent = existing.and_then(|task| task.parent_id.clone());
+    let parent_id = parent_patch.unwrap_or_else(|| old_parent.clone());
+
+    let project_id = if let Some(parent_id) = parent_id.as_deref() {
+        if task_id == Some(parent_id) {
+            return Err("任务不能成为自己的子任务".into());
+        }
+        let parent = data
+            .task(parent_id)
+            .ok_or_else(|| format!("上级任务不存在: {}", parent_id))?;
+        if task_id.is_some_and(|id| task_is_descendant(data, parent_id, id)) {
+            return Err("不能把任务移动到自己的子任务下".into());
+        }
+        if old_parent.as_deref() != Some(parent_id) && parent.repeat != RepeatRule::None {
+            return Err("重复任务不能包含子任务".into());
+        }
+        let inherited = parent.project_id.clone();
+        if project_patch
+            .as_ref()
+            .is_some_and(|requested| requested != &inherited)
+        {
+            return Err("子任务必须与上级任务属于同一项目".into());
+        }
+        inherited
+    } else {
+        project_patch.unwrap_or_else(|| old_project.clone())
+    };
+
+    if let Some(project_id) = project_id.as_deref() {
+        let project = data
+            .project(project_id)
+            .ok_or_else(|| format!("项目不存在: {}", project_id))?;
+        if project.archived && old_project.as_deref() != Some(project_id) {
+            return Err("不能将任务加入已归档项目".into());
+        }
+    }
+    Ok((parent_id, project_id))
+}
+
+fn task_is_descendant(data: &Data, candidate_id: &str, ancestor_id: &str) -> bool {
+    let mut current = data
+        .task(candidate_id)
+        .and_then(|task| task.parent_id.as_deref());
+    let mut seen = HashSet::new();
+    while let Some(id) = current {
+        if id == ancestor_id || !seen.insert(id) {
+            return true;
+        }
+        current = data.task(id).and_then(|task| task.parent_id.as_deref());
+    }
+    false
+}
+
+fn task_descendant_ids(data: &Data, task_id: &str) -> HashSet<String> {
+    let mut descendants = HashSet::new();
+    let mut parents = vec![task_id.to_string()];
+    while let Some(parent_id) = parents.pop() {
+        for child in data
+            .tasks
+            .iter()
+            .filter(|task| task.parent_id.as_deref() == Some(parent_id.as_str()))
+        {
+            if descendants.insert(child.id.clone()) {
+                parents.push(child.id.clone());
+            }
+        }
+    }
+    descendants.remove(task_id);
+    descendants
+}
+
+fn task_project_family_ids(data: &Data, task_id: &str) -> HashSet<String> {
+    let mut related = HashSet::new();
+    let mut pending = vec![task_id.to_string()];
+    while let Some(current_id) = pending.pop() {
+        let previous_repeat = data
+            .task(&current_id)
+            .and_then(|task| task.repeat_parent_id.as_deref());
+        for task in &data.tasks {
+            let linked = task.parent_id.as_deref() == Some(current_id.as_str())
+                || task.repeat_parent_id.as_deref() == Some(current_id.as_str())
+                || previous_repeat.is_some_and(|previous_id| task.id == previous_id);
+            if linked && task.id != task_id && related.insert(task.id.clone()) {
+                pending.push(task.id.clone());
+            }
+        }
+    }
+    related
+}
+
+fn task_repeat_family_ids(data: &Data, task_id: &str) -> HashSet<String> {
+    let mut related = HashSet::new();
+    let mut pending = vec![task_id.to_string()];
+    while let Some(current_id) = pending.pop() {
+        let previous_repeat = data
+            .task(&current_id)
+            .and_then(|task| task.repeat_parent_id.as_deref());
+        for task in &data.tasks {
+            let linked = task.repeat_parent_id.as_deref() == Some(current_id.as_str())
+                || previous_repeat.is_some_and(|previous_id| task.id == previous_id);
+            if linked && task.id != task_id && related.insert(task.id.clone()) {
+                pending.push(task.id.clone());
+            }
+        }
+    }
+    related
+}
+
+fn task_has_children(data: &Data, task_id: &str) -> bool {
+    data.tasks
+        .iter()
+        .any(|task| task.parent_id.as_deref() == Some(task_id))
+}
+
+fn reopen_completed_ancestors(data: &mut Data, parent_id: &str) {
+    let mut current = Some(parent_id.to_string());
+    let mut seen = HashSet::new();
+    while let Some(id) = current {
+        if !seen.insert(id.clone()) {
+            break;
+        }
+        let Some(parent) = data.task(&id) else {
+            break;
+        };
+        let next = parent.parent_id.clone();
+        if parent.done {
+            if let Some(parent) = data.task_mut(&id) {
+                parent.done = false;
+                parent.completed_at = None;
+            }
+        }
+        current = next;
+    }
+}
+
 fn parse_reminder(value: &str) -> Result<Option<String>, String> {
     if matches!(value.trim().to_lowercase().as_str(), "" | "off" | "none") {
         return Ok(None);
@@ -965,6 +1360,8 @@ fn next_repeat_date(task: &Task, reference: chrono::NaiveDate) -> Result<String,
 
 fn is_untouched_repeat_child(child: &Task, parent: &Task, generated_date: &str) -> bool {
     child.repeat_parent_id.as_deref() == Some(parent.id.as_str())
+        && child.project_id == parent.project_id
+        && child.parent_id == parent.parent_id
         && child.date == generated_date
         && child.created_at == parent.completed_at.as_deref().unwrap_or("")
         && !child.done
@@ -1034,6 +1431,8 @@ mod tests {
     fn task(id: &str, title: &str, done: bool, kind: TaskKind) -> Task {
         Task {
             id: id.into(),
+            project_id: None,
+            parent_id: None,
             title: title.into(),
             notes: String::new(),
             date: "2026-09-23".into(),

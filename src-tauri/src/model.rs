@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-pub const DATA_VERSION: u32 = 2;
+pub const DATA_VERSION: u32 = 3;
 static ID_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -365,6 +365,10 @@ impl Default for Settings {
 #[serde(deny_unknown_fields)]
 pub struct Task {
     pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<String>,
     pub title: String,
     #[serde(default)]
     pub notes: String,
@@ -396,6 +400,20 @@ pub struct Task {
     pub created_at: String,
     #[serde(default)]
     pub completed_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Project {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub archived: bool,
+    pub created_at: String,
+    #[serde(default)]
+    pub updated_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -465,6 +483,8 @@ pub struct Data {
     #[serde(default)]
     pub tasks: Vec<Task>,
     #[serde(default)]
+    pub projects: Vec<Project>,
+    #[serde(default)]
     pub notes: Vec<Note>,
     #[serde(default)]
     pub settings: Settings,
@@ -481,6 +501,8 @@ pub struct UiData {
     #[serde(default)]
     pub tasks: Vec<Task>,
     #[serde(default)]
+    pub projects: Vec<Project>,
+    #[serde(default)]
     pub notes: Vec<Note>,
     #[serde(default)]
     pub settings: Settings,
@@ -490,6 +512,7 @@ pub struct UiData {
 pub struct UiSnapshot<'a> {
     pub version: u32,
     pub tasks: &'a [Task],
+    pub projects: &'a [Project],
     pub notes: &'a [Note],
     pub settings: &'a Settings,
 }
@@ -499,6 +522,7 @@ impl From<Data> for UiData {
         Self {
             version: data.version,
             tasks: data.tasks,
+            projects: data.projects,
             notes: data.notes,
             settings: data.settings,
         }
@@ -514,6 +538,7 @@ impl Default for Data {
         Data {
             version: DATA_VERSION,
             tasks: Vec::new(),
+            projects: Vec::new(),
             notes: Vec::new(),
             settings: Settings::default(),
             undo: None,
@@ -526,13 +551,15 @@ impl Data {
         UiSnapshot {
             version: self.version,
             tasks: &self.tasks,
+            projects: &self.projects,
             notes: &self.notes,
             settings: &self.settings,
         }
     }
 
     pub fn affects_ui_except_tasks(&self, other: &Self) -> bool {
-        self.notes.len() != other.notes.len()
+        self.projects != other.projects
+            || self.notes.len() != other.notes.len()
             || self.notes.iter().zip(&other.notes).any(|(left, right)| {
                 left.id != right.id
                     || left.title != right.title
@@ -555,6 +582,12 @@ impl Data {
     }
     pub fn task_mut(&mut self, id: &str) -> Option<&mut Task> {
         self.tasks.iter_mut().find(|t| t.id == id)
+    }
+    pub fn project(&self, id: &str) -> Option<&Project> {
+        self.projects.iter().find(|project| project.id == id)
+    }
+    pub fn project_mut(&mut self, id: &str) -> Option<&mut Project> {
+        self.projects.iter_mut().find(|project| project.id == id)
     }
     pub fn note(&self, id: &str) -> Option<&Note> {
         self.notes.iter().find(|n| n.id == id)
@@ -587,6 +620,7 @@ impl Data {
         loop {
             let candidate = Self::gen_id(prefix);
             if !self.tasks.iter().any(|task| task.id == candidate)
+                && !self.projects.iter().any(|project| project.id == candidate)
                 && !self.notes.iter().any(|note| note.id == candidate)
             {
                 return candidate;

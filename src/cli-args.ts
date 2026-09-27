@@ -1,5 +1,5 @@
 export type TaskAddOptions = Partial<Record<
-  "kind" | "date" | "start" | "end" | "priority" | "tags" | "notes" | "quadrant" | "repeat" | "remind",
+  "kind" | "date" | "start" | "end" | "priority" | "tags" | "notes" | "quadrant" | "repeat" | "remind" | "project" | "parent",
   string
 >>;
 

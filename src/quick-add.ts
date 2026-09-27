@@ -6,13 +6,14 @@ let state = {
   time: "",
   kind: "normal",
   quadrant: "q2",
+  project: "",
   priority: "",
   repeat: "none",
   remindMode: "start",
   remindTime: "",
 };
 
-export function quickAdd(opts: RenderOpts, selectedDate: string): HTMLElement {
+export function quickAdd(opts: RenderOpts, selectedDate: string, projectMode = false): HTMLElement {
   const title = el("input", { placeholder: "捕捉一项计划…", "aria-label": "任务标题", "data-focus-key": "quick-title" });
   const time = el("input", { placeholder: "时间 / 目标日", "aria-label": "时间或目标日期", "data-focus-key": "quick-time" });
   const priority = document.createElement("select");
@@ -40,6 +41,14 @@ export function quickAdd(opts: RenderOpts, selectedDate: string): HTMLElement {
     option.textContent = label;
     quadrant.append(option);
   }
+  const project = document.createElement("select");
+  project.dataset.focusKey = "quick-project";
+  project.setAttribute("aria-label", "所属项目");
+  project.append(new Option("未归属项目", ""));
+  for (const item of opts.data.projects.filter((item) => !item.archived)) {
+    project.append(new Option(item.name, item.id));
+  }
+  project.value = state.project;
   const repeat = document.createElement("select");
   repeat.dataset.focusKey = "quick-repeat";
   repeat.setAttribute("aria-label", "重复规则");
@@ -72,6 +81,7 @@ export function quickAdd(opts: RenderOpts, selectedDate: string): HTMLElement {
   time.addEventListener("input", () => (state.time = time.value));
   kind.addEventListener("change", () => (state.kind = kind.value));
   quadrant.addEventListener("change", () => (state.quadrant = quadrant.value));
+  project.addEventListener("change", () => (state.project = project.value));
   priority.addEventListener("change", () => (state.priority = priority.value));
   repeat.addEventListener("change", () => (state.repeat = repeat.value));
   remindTime.addEventListener("change", () => (state.remindTime = remindTime.value));
@@ -107,6 +117,7 @@ export function quickAdd(opts: RenderOpts, selectedDate: string): HTMLElement {
 
   const form = el("form", {},
     title,
+    projectMode ? el("div", { class: "qa-row qa-project-row" }, project) : null,
     el("div", { class: "qa-row" }, time, priority),
     el("div", { class: "qa-row" }, kind, quadrant),
     el("div", { class: "qa-row" }, repeat, remindMode),
@@ -121,6 +132,7 @@ export function quickAdd(opts: RenderOpts, selectedDate: string): HTMLElement {
     const isGoal = kind.value === "goal";
     const result = await opts.onCall(taskAddArgs(titleText, {
       kind: kind.value,
+      project: projectMode ? project.value || undefined : undefined,
       date: isGoal ? time.value.trim() || undefined : selectedDate,
       start: !isGoal ? time.value.trim() || undefined : undefined,
       priority: priority.value || undefined,
@@ -140,6 +152,7 @@ export function quickAdd(opts: RenderOpts, selectedDate: string): HTMLElement {
       time: "",
       kind: "normal",
       quadrant: "q2",
+      project: projectMode ? project.value : "",
       priority: "",
       repeat: "none",
       remindMode: "start",

@@ -52,7 +52,7 @@ impl Store {
                 return Err(format!("data.json 解析失败，原文件已保留: {}", error));
             }
         };
-        let migrated = if data.version == 1 {
+        let migrated = if matches!(data.version, 1 | 2) {
             data.version = DATA_VERSION;
             true
         } else if data.version != DATA_VERSION {
@@ -97,7 +97,7 @@ impl Store {
                 return Err(format!("data.json 解析失败，原文件已保留: {}", error));
             }
         };
-        if data.version != 1 && data.version != DATA_VERSION {
+        if !matches!(data.version, 1 | 2 | DATA_VERSION) {
             return Err(format!(
                 "数据版本 {} 不受当前版本 {} 支持；原文件已保留",
                 data.version, DATA_VERSION
@@ -330,6 +330,8 @@ mod tests {
     fn test_task(id: usize) -> Task {
         Task {
             id: format!("t_{}", id),
+            project_id: None,
+            parent_id: None,
             title: format!("task {}", id),
             notes: String::new(),
             date: "2026-09-23".into(),
