@@ -19,7 +19,10 @@ const QUADRANT_META: Record<Quadrant, { label: string; short: string }> = {
   q4: { label: "不重要不紧急", short: "Q4" },
 };
 let taskSearch = "";
-let taskView: "day" | "projects" | "all" | "open" | "done" | "matrix" = "day";
+type WorkspaceMode = "day" | "projects" | "matrix";
+type TaskFilter = "all" | "open" | "done";
+let taskView: WorkspaceMode = "day";
+let taskFilter: TaskFilter = "all";
 let showArchivedProjects = false;
 
 function fmtDate(d: Date): string {
@@ -189,44 +192,65 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
   const defaultItems = Array.from(listEl.childNodes);
   const searchInput = el("input", { class: "task-search", type: "search", placeholder: "搜索任务", "aria-label": "搜索任务或项目" });
   searchInput.value = taskSearch;
-  const viewSelect = document.createElement("select");
-  viewSelect.className = "task-view-select";
-  viewSelect.setAttribute("aria-label", "筛选任务");
-  for (const [value, label] of [["day", "当前日期"], ["projects", "项目树"], ["all", "全部任务"], ["open", "未完成"], ["done", "已完成"], ["matrix", "四象限"]] as const) {
+  const modeLabels: Array<[WorkspaceMode, string, string]> = [
+    ["day", "时间", "按时间安排执行"],
+    ["projects", "项目", "按项目推进结果"],
+    ["matrix", "重要性", "按四象限判断优先级"],
+  ];
+  const modeSwitch = el("div", { class: "view-mode-switch", role: "tablist", "aria-label": "任务组织模式" });
+  for (const [value, label, hint] of modeLabels) {
+    const button = el("button", {
+      class: `mode-tab${taskView === value ? " active" : ""}`,
+      type: "button",
+      role: "tab",
+      "aria-selected": String(taskView === value),
+      title: hint,
+    }, label);
+    button.addEventListener("click", () => {
+      taskView = value;
+      taskSearch = "";
+      window.__dailyflow.rerender();
+    });
+    modeSwitch.append(button);
+  }
+  const filterSelect = document.createElement("select");
+  filterSelect.className = "task-filter-select";
+  filterSelect.setAttribute("aria-label", "任务状态筛选");
+  for (const [value, label] of [["all", "全部任务"], ["open", "未完成"], ["done", "已完成"]] as const) {
     const option = document.createElement("option");
     option.value = value;
     option.textContent = label;
-    viewSelect.append(option);
+    filterSelect.append(option);
   }
-  viewSelect.value = taskView;
+  filterSelect.value = taskFilter;
   const countBadge = el("span", { class: "count-badge" }, String(openCount));
-  const viewTitle = () => taskView === "matrix" ? "四象限" : taskView === "projects" ? "项目与任务" : "日程与待办";
+  const viewTitle = () => taskView === "matrix" ? "重要性矩阵" : taskView === "projects" ? "项目任务树" : "时间安排";
   const sectionTitle = el("h2", {}, viewTitle());
   const refreshTaskList = () => {
     if (taskView === "projects") {
-      const board = projectsBoard(data, opts, taskSearch);
-      countBadge.textContent = String(board.openCount);
+      const board = projectsBoard(data, opts, taskSearch, taskFilter);
+      countBadge.textContent = String(board.count);
       listEl.replaceChildren(board.element);
       return;
     }
     if (taskView === "matrix") {
       const query = taskSearch.trim().toLocaleLowerCase();
       const matches = data.tasks
-        .filter((task) => !task.done)
+        .filter((task) => taskFilter === "all" || (taskFilter === "open" ? !task.done : task.done))
         .filter((task) => !query || [task.title, task.notes, task.date, ...task.tags].some((value) => value.toLocaleLowerCase().includes(query)))
         .sort((a, b) => taskQuadrant(a).localeCompare(taskQuadrant(b)) || (a.date || "9999").localeCompare(b.date || "9999") || a.id.localeCompare(b.id));
       countBadge.textContent = String(matches.length);
       listEl.replaceChildren(matrixBoard(matches, opts));
       return;
     }
-    if (taskView === "day" && !taskSearch.trim()) {
+    if (taskView === "day" && taskFilter === "all" && !taskSearch.trim()) {
       listEl.replaceChildren(...defaultItems);
       countBadge.textContent = String(openCount);
       return;
     }
     const query = taskSearch.trim().toLocaleLowerCase();
     const matches = data.tasks
-      .filter((task) => (taskView !== "open" || !task.done) && (taskView !== "done" || task.done))
+      .filter((task) => taskFilter === "all" || (taskFilter === "open" ? !task.done : task.done))
       .filter((task) => !query || [task.title, task.notes, task.date, ...task.tags].some((value) => value.toLocaleLowerCase().includes(query)))
       .sort((a, b) => Number(a.done) - Number(b.done) || (a.date || "9999").localeCompare(b.date || "9999") || a.id.localeCompare(b.id));
     countBadge.textContent = String(matches.length);
@@ -236,24 +260,11 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
   };
   searchInput.addEventListener("input", () => {
     taskSearch = searchInput.value;
-    if (taskSearch.trim() && taskView === "day") {
-      taskView = "all";
-      viewSelect.value = "all";
-      sectionTitle.textContent = viewTitle();
-    }
     refreshTaskList();
   });
-  viewSelect.addEventListener("change", () => {
-    taskView = viewSelect.value as typeof taskView;
+  filterSelect.addEventListener("change", () => {
+    taskFilter = filterSelect.value as TaskFilter;
     sectionTitle.textContent = viewTitle();
-    if (taskView === "projects") {
-      taskSearch = "";
-      searchInput.value = "";
-    }
-    if (taskView === "day") {
-      taskSearch = "";
-      searchInput.value = "";
-    }
     refreshTaskList();
   });
   refreshTaskList();
@@ -261,24 +272,25 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
     "div",
     { class: "tasks-col" },
     el("div", { class: "workspace-intro" },
-      el("div", { class: "section-kicker" }, taskView === "projects" ? "WORKSPACE / PROJECTS" : today === selectedDate ? "WORKSPACE / TODAY" : "WORKSPACE / SCHEDULE"),
+      el("div", { class: "section-kicker" }, taskView === "projects" ? "WORKSPACE / PROJECTS" : taskView === "matrix" ? "WORKSPACE / PRIORITY" : today === selectedDate ? "WORKSPACE / TODAY" : "WORKSPACE / SCHEDULE"),
       el("div", { class: "workspace-title-row" },
-        el("h1", { class: "workspace-title" }, taskView === "projects" ? "项目任务树" : today === selectedDate ? "今天的节奏" : "这一天的安排"),
-        taskView !== "projects" ? el("span", { class: "workspace-date" }, selectedDate.slice(5).replace("-", " / ")) : null,
+        el("h1", { class: "workspace-title" }, taskView === "projects" ? "项目任务树" : taskView === "matrix" ? "重要性矩阵" : today === selectedDate ? "今天的节奏" : "这一天的安排"),
+        taskView === "day" ? el("span", { class: "workspace-date" }, selectedDate.slice(5).replace("-", " / ")) : null,
       ),
       el("p", { class: "workspace-subtitle" }, taskView === "projects"
         ? `${data.projects.filter((project) => showArchivedProjects || !project.archived).length} 个项目 · ${projectOpenCount} 项未完成`
+        : taskView === "matrix" ? "把注意力放在真正重要的事情上"
         : openCountText(dayTasks)),
     ),
-    taskView !== "projects" ? statCards(data, today) : null,
+    taskView === "day" ? statCards(data, today) : null,
     el("div", { class: "section-head" },
       sectionTitle,
       countBadge,
       el("div", { class: "spacer" }),
-      selectedDate !== today && taskView !== "projects"
+      selectedDate !== today && taskView === "day"
         ? el("button", { class: "mini-btn", onclick: () => opts.onSelectDate(today) }, "← 回到今天")
         : null,
-      taskView !== "projects" ? el("button", { class: "mini-btn", onclick: async () => {
+      taskView === "day" ? el("button", { class: "mini-btn", onclick: async () => {
         const result = await opts.onCall(taskClearDoneArgs(selectedDate));
         if (!result.ok) return;
         const data = result.data as { removed?: number; deleted_ids?: string[]; retained_with_children?: number } | undefined;
@@ -297,7 +309,7 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
         }
       } }, "清理已完成") : null,
     ),
-    el("div", { class: "task-tools" }, searchInput, viewSelect),
+    el("div", { class: "task-tools" }, modeSwitch, el("div", { class: "task-tools-row" }, searchInput, filterSelect)),
     listEl,
   );
 
@@ -328,10 +340,10 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
   }
 }
 
-function projectsBoard(data: Data, opts: RenderOpts, search: string): { element: HTMLElement; openCount: number } {
+function projectsBoard(data: Data, opts: RenderOpts, search: string, filter: TaskFilter = "all"): { element: HTMLElement; count: number } {
   const board = el("div", { class: "projects-board" });
   const query = search.trim().toLocaleLowerCase();
-  let visibleOpenCount = 0;
+  let visibleCount = 0;
   const createButton = el("button", { class: "mini-btn", type: "button" }, "+ 新建项目");
   const archivedButton = el("button", { class: "mini-btn", type: "button" }, showArchivedProjects ? "隐藏归档" : "显示归档");
   const projectName = el("input", { type: "text", placeholder: "项目名称", "aria-label": "项目名称" });
@@ -387,7 +399,7 @@ function projectsBoard(data: Data, opts: RenderOpts, search: string): { element:
     tasksByProject.set(task.project_id, tasks);
   }
   for (const project of projects) {
-    const tasks = tasksByProject.get(project.id) || [];
+    const tasks = (tasksByProject.get(project.id) || []).filter((task) => filter === "all" || (filter === "open" ? !task.done : task.done));
     const taskIds = new Set(tasks.map((task) => task.id));
     const projectMatches = query.length > 0
       && [project.name, project.description].some((value) => value.toLocaleLowerCase().includes(query));
@@ -400,7 +412,7 @@ function projectsBoard(data: Data, opts: RenderOpts, search: string): { element:
     const childrenByParent = taskChildren(visibleTasks);
     const openCount = visibleTasks.filter((task) => !task.done).length;
     const completedCount = visibleTasks.length - openCount;
-    visibleOpenCount += openCount;
+    visibleCount += visibleTasks.length;
     const list = el("div", { class: "project-task-tree" });
     if (roots.length) {
       for (const task of roots) list.append(taskItem(task, opts, true, childrenByParent));
@@ -467,7 +479,7 @@ function projectsBoard(data: Data, opts: RenderOpts, search: string): { element:
     );
   }
 
-  const unassigned = data.tasks.filter((task) => !task.project_id);
+  const unassigned = data.tasks.filter((task) => !task.project_id && (filter === "all" || (filter === "open" ? !task.done : task.done)));
   const visibleUnassignedIds = matchingTreeTaskIds(unassigned, query);
   const visibleUnassigned = unassigned.filter((task) => visibleUnassignedIds.has(task.id));
   if (visibleUnassigned.length) {
@@ -476,7 +488,7 @@ function projectsBoard(data: Data, opts: RenderOpts, search: string): { element:
       .filter((task) => !task.parent_id || !visibleIds.has(task.parent_id))
       .sort(taskOrder);
     const childrenByParent = taskChildren(visibleUnassigned);
-    visibleOpenCount += visibleUnassigned.filter((task) => !task.done).length;
+    visibleCount += visibleUnassigned.length;
     const section = el("section", { class: "project-section project-unassigned" },
       el("div", { class: "project-section-head" }, el("h3", {}, "未归属项目")),
     );
@@ -491,7 +503,7 @@ function projectsBoard(data: Data, opts: RenderOpts, search: string): { element:
   if (!board.querySelector(".project-section")) {
     board.append(el("div", { class: "project-empty-state" }, query ? "没有符合条件的项目或任务" : "还没有项目或任务"));
   }
-  return { element: board, openCount: visibleOpenCount };
+  return { element: board, count: visibleCount };
 }
 
 function matchingTreeTaskIds(tasks: Task[], query: string): Set<string> {

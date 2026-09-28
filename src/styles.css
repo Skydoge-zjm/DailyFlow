@@ -1506,3 +1506,293 @@ body[data-view="widget"] .widget-toast button {
   font-weight: 700;
 }
 body[data-view="widget"] .widget-toast button:hover { background: var(--accent-soft); }
+
+/* ============================================================
+   Workspace refresh 2026
+   The main window uses a quieter editorial layout: a clear work area,
+   compact controls, and a calmer control rail. Child windows keep their
+   existing appearance above this block.
+   ============================================================ */
+:root {
+  --bg: #0b1116;
+  --bg-soft: #111a21;
+  --card: #131e27;
+  --card-hover: #192630;
+  --border: #253742;
+  --border-soft: #1b2a34;
+  --text: #edf3f2;
+  --text-dim: #a5b4b7;
+  --text-faint: #71838a;
+  --accent: #e6a45f;
+  --accent-soft: rgba(230, 164, 95, 0.13);
+  --teal: #70c8bb;
+  --red: #ef8079;
+  --green: #83cf91;
+  --blue: #88b7df;
+  --pri-high: #ef8079;
+  --pri-normal: #e6a45f;
+  --pri-low: #71858d;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --shadow: 0 18px 44px rgba(0, 0, 0, 0.22);
+  --shadow-soft: 0 7px 18px rgba(0, 0, 0, 0.15);
+}
+
+:root[data-theme="light"] {
+  --bg: #f1f4f2;
+  --bg-soft: #e7eeeb;
+  --card: #fbfdfb;
+  --card-hover: #f3f8f5;
+  --border: #d4dfdb;
+  --border-soft: #e1e9e6;
+  --text: #263439;
+  --text-dim: #607177;
+  --text-faint: #8b9a9d;
+  --accent: #ba7132;
+  --accent-soft: rgba(186, 113, 50, 0.11);
+  --teal: #3f958d;
+  --red: #c75f5a;
+  --green: #4c9a60;
+  --blue: #5485b5;
+  --pri-high: #c75f5a;
+  --pri-normal: #ba7132;
+  --pri-low: #7f9194;
+  --shadow: 0 16px 32px rgba(38, 52, 57, 0.09);
+  --shadow-soft: 0 6px 16px rgba(38, 52, 57, 0.07);
+}
+
+#app.modern-app {
+  background: var(--bg);
+  color: var(--text);
+}
+
+#app.modern-app .topbar {
+  min-height: 82px;
+  padding: 17px clamp(20px, 4vw, 52px) 15px;
+  gap: 20px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg);
+}
+
+#app.modern-app .brand-lockup { min-width: 160px; gap: 10px; }
+#app.modern-app .brand-mark {
+  width: 34px; height: 34px; border-radius: 10px;
+  background: var(--accent); color: #172127;
+  font-size: 13px; box-shadow: 0 5px 12px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+#app.modern-app .brand-name { font-size: 11px; letter-spacing: 2px; }
+#app.modern-app .brand-caption { font-size: 10px; color: var(--text-faint); }
+#app.modern-app .topbar-divider { height: 30px; background: var(--border); }
+#app.modern-app .topbar .date-block { gap: 2px; }
+#app.modern-app .topbar .date-kicker { font-size: 9px; letter-spacing: 1.5px; color: var(--accent); }
+#app.modern-app .topbar .date-main { font-size: 22px; font-weight: 760; }
+#app.modern-app .topbar .date-sub { font-size: 10px; color: var(--text-dim); }
+#app.modern-app .progress-cluster {
+  gap: 9px; padding-left: 14px; border-left: 1px solid var(--border-soft);
+}
+#app.modern-app .progress-ring,
+#app.modern-app .progress-ring svg { width: 44px; height: 44px; }
+#app.modern-app .progress-ring .ring-fg { stroke: var(--teal); }
+#app.modern-app .progress-ring .ring-label { color: var(--teal); font-size: 11px; }
+#app.modern-app .progress-copy { gap: 3px; }
+#app.modern-app .progress-copy .progress-label { font-size: 9px; letter-spacing: 1.2px; color: var(--text-faint); }
+#app.modern-app .progress-copy strong { font-size: 11px; color: var(--text-dim); }
+#app.modern-app .topbar-actions { gap: 3px; }
+#app.modern-app .topbar .action-btn {
+  min-width: 58px; height: 32px; padding: 0 8px; border-radius: 8px;
+  color: var(--text-dim); font-size: 11px;
+}
+#app.modern-app .topbar .action-btn:hover {
+  color: var(--text); background: var(--card); border-color: var(--border);
+  transform: none;
+}
+#app.modern-app .btn-glyph { color: var(--accent); font-size: 14px; }
+
+#app.modern-app .layout {
+  width: 100%; max-width: 1380px; margin: 0 auto;
+  gap: clamp(22px, 3vw, 38px); padding: 28px clamp(20px, 4vw, 52px) 18px;
+  overflow: hidden;
+}
+#app.modern-app .tasks-col { flex: 1 1 auto; min-width: 0; }
+#app.modern-app .side-col {
+  flex: 0 0 328px; width: 328px; max-width: 328px; gap: 12px;
+  overflow-y: auto; padding: 0 1px 16px 0;
+}
+
+#app.modern-app .workspace-intro { margin: 0 0 20px 1px; }
+#app.modern-app .section-kicker,
+#app.modern-app .panel-eyebrow {
+  font-size: 9px; font-weight: 800; letter-spacing: 1.7px;
+  color: var(--accent); text-transform: uppercase;
+}
+#app.modern-app .workspace-title-row { gap: 12px; margin-top: 8px; }
+#app.modern-app .workspace-title { font-size: clamp(24px, 3vw, 31px); line-height: 1.08; font-weight: 720; letter-spacing: -0.4px; }
+#app.modern-app .workspace-date { color: var(--text-faint); font-size: 10px; letter-spacing: 1.1px; }
+#app.modern-app .workspace-subtitle { margin-top: 7px; font-size: 12px; color: var(--text-dim); }
+
+#app.modern-app .stat-cards {
+  grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; margin: 0 0 24px;
+  border: 1px solid var(--border-soft); border-radius: 10px; overflow: hidden;
+  background: color-mix(in srgb, var(--card) 52%, transparent);
+}
+#app.modern-app .stat-card { padding: 13px 15px 12px; border: 0; border-radius: 0; background: transparent; }
+#app.modern-app .stat-card + .stat-card { border-left: 1px solid var(--border-soft); }
+#app.modern-app .stat-card:hover { background: var(--card); }
+#app.modern-app .stat-card::after { display: none; }
+#app.modern-app .stat-value { font-size: 22px; font-weight: 740; }
+#app.modern-app .stat-label { margin-top: 5px; font-size: 10px; letter-spacing: 0.4px; }
+
+#app.modern-app .section-head { margin: 0 1px 10px; gap: 8px; }
+#app.modern-app .section-head h2 { font-size: 13px; font-weight: 720; letter-spacing: 0.2px; }
+#app.modern-app .section-head h2::before { width: 6px; height: 6px; margin-right: 7px; background: var(--teal); }
+#app.modern-app .section-head .count-badge { padding: 2px 7px; border-radius: 6px; font-size: 10px; }
+#app.modern-app .mini-btn { padding: 5px 8px; border-radius: 6px; font-size: 11px; color: var(--text-faint); }
+#app.modern-app .mini-btn:hover { background: var(--card); color: var(--text); }
+
+#app.modern-app .task-tools { gap: 8px; margin: 0 1px 14px; }
+#app.modern-app .task-tools { display: flex; flex-direction: column; gap: 10px; }
+#app.modern-app .view-mode-switch {
+  display: inline-flex; align-self: flex-start; gap: 3px; padding: 3px;
+  border: 1px solid var(--border-soft); border-radius: 9px; background: var(--bg-soft);
+}
+#app.modern-app .mode-tab {
+  min-width: 72px; min-height: 29px; padding: 5px 12px; border-radius: 6px;
+  color: var(--text-faint); font-size: 11px; font-weight: 650; transition: color .15s, background .15s, box-shadow .15s;
+}
+#app.modern-app .mode-tab:hover { color: var(--text); }
+#app.modern-app .mode-tab.active {
+  color: var(--text); background: var(--card); box-shadow: 0 2px 7px rgba(0, 0, 0, .12);
+}
+#app.modern-app .task-tools-row { display: flex; gap: 8px; }
+#app.modern-app .task-search,
+#app.modern-app .task-filter-select {
+  min-height: 36px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg-soft); color: var(--text); font-size: 12px;
+}
+#app.modern-app .task-search { padding: 7px 11px; }
+#app.modern-app .task-filter-select { flex: 0 0 116px; padding: 6px 8px; }
+#app.modern-app .task-search:focus,
+#app.modern-app .task-filter-select:focus { border-color: var(--teal); box-shadow: 0 0 0 3px color-mix(in srgb, var(--teal) 12%, transparent); }
+
+#app.modern-app .task-list { padding: 0 1px 22px; }
+#app.modern-app .time-group { margin-bottom: 20px; }
+#app.modern-app .time-group-label {
+  margin: 0 0 7px; display: flex; align-items: center; gap: 9px;
+  font-size: 10px; font-weight: 800; letter-spacing: 1.4px; color: var(--text-faint);
+}
+#app.modern-app .time-group-label::after { content: ""; flex: 1; height: 1px; background: var(--border-soft); }
+#app.modern-app .overdue-label { color: var(--red); }
+
+#app.modern-app .task-item {
+  min-height: 58px; margin-bottom: 7px; padding: 11px 11px 10px 14px; gap: 11px;
+  border: 1px solid var(--border-soft); border-radius: 9px; background: var(--card);
+  box-shadow: none; transition: background .16s, border-color .16s, transform .16s, box-shadow .16s;
+}
+#app.modern-app .task-item:hover { border-color: var(--border); background: var(--card-hover); box-shadow: var(--shadow-soft); transform: translateY(-1px); }
+#app.modern-app .task-item::before { top: 11px; bottom: 11px; width: 3px; border-radius: 0 3px 3px 0; }
+#app.modern-app .task-check { width: 19px; height: 19px; margin-top: 1px; border-radius: 50%; border-color: var(--text-faint); }
+#app.modern-app .task-check:hover { border-color: var(--teal); transform: scale(1.06); }
+#app.modern-app .task-title { font-size: 13.5px; line-height: 1.4; font-weight: 560; }
+#app.modern-app .task-meta { gap: 8px; margin-top: 4px; font-size: 10px; color: var(--text-dim); }
+#app.modern-app .task-meta .time-chip { color: var(--teal); font-weight: 700; font-variant-numeric: tabular-nums; }
+#app.modern-app .task-meta .tag-chip { padding: 0; border: 0; background: transparent; color: var(--text-faint); }
+#app.modern-app .task-meta .tag-chip::before { content: "#"; margin-right: 1px; opacity: .65; }
+#app.modern-app .task-meta .quadrant-chip { min-width: 22px; padding: 1px 4px; border-radius: 4px; font-size: 9px; font-weight: 800; }
+#app.modern-app .task-edit { opacity: 0; padding: 4px 6px; border-radius: 6px; color: var(--text-faint); font-size: 11px; }
+#app.modern-app .task-del { opacity: 0; padding: 4px 5px; border-radius: 6px; font-size: 13px; }
+#app.modern-app .task-item:hover .task-edit,
+#app.modern-app .task-item:hover .task-del,
+#app.modern-app .task-item:focus-within .task-edit,
+#app.modern-app .task-item:focus-within .task-del { opacity: .82; }
+#app.modern-app .task-edit:hover { color: var(--accent); background: var(--accent-soft); }
+#app.modern-app .task-del:hover { color: var(--red); background: color-mix(in srgb, var(--red) 12%, transparent); }
+
+#app.modern-app .quadrant-board { gap: 11px; padding: 0 1px 22px; }
+#app.modern-app .quadrant-cell { min-height: 178px; padding: 13px; border: 1px solid var(--border-soft); border-radius: 10px; background: var(--card); }
+#app.modern-app .quadrant-cell.quadrant-q1 { border-top: 2px solid var(--red); }
+#app.modern-app .quadrant-cell.quadrant-q2 { border-top: 2px solid var(--accent); }
+#app.modern-app .quadrant-cell.quadrant-q3 { border-top: 2px solid var(--blue); }
+#app.modern-app .quadrant-cell.quadrant-q4 { border-top: 2px solid var(--text-faint); }
+
+#app.modern-app .projects-board { gap: 15px; padding: 0 1px 22px; }
+#app.modern-app .projects-toolbar { gap: 7px; }
+#app.modern-app .project-section { padding: 14px 0 3px; border-top: 1px solid var(--border-soft); }
+#app.modern-app .project-heading h3,
+#app.modern-app .project-section-head > h3 { font-size: 15px; font-weight: 720; }
+#app.modern-app .project-description { margin-bottom: 10px; font-size: 11px; }
+#app.modern-app .project-task-tree { gap: 6px; }
+#app.modern-app .task-tree-node > .task-tree-node { margin-left: 16px; padding-left: 12px; border-left: 1px solid var(--border); }
+#app.modern-app .task-child-add { width: 24px; height: 24px; border-radius: 6px; }
+#app.modern-app .task-child-form { margin-left: 45px; }
+
+#app.modern-app .week-cal,
+#app.modern-app .quick-add {
+  padding: 16px; border: 1px solid var(--border-soft); border-radius: 12px;
+  background: var(--card); box-shadow: 0 8px 20px rgba(0, 0, 0, .07);
+}
+#app.modern-app .week-cal { border-top: 2px solid var(--teal); }
+#app.modern-app .quick-add { border-top: 2px solid var(--accent); }
+#app.modern-app .panel-heading { gap: 6px; }
+#app.modern-app .panel-heading h3 { font-size: 16px; line-height: 1.12; font-weight: 720; }
+#app.modern-app .panel-eyebrow { font-size: 9px; }
+#app.modern-app .week-cal-head { margin-bottom: 15px; }
+#app.modern-app .week-nav { width: 25px; height: 25px; border-radius: 7px; }
+#app.modern-app .week-grid { gap: 4px; }
+#app.modern-app .week-day { padding: 8px 0 7px; border-radius: 8px; }
+#app.modern-app .week-day.selected { background: var(--accent-soft); }
+#app.modern-app .week-day.today .dn { background: var(--teal); color: #102019; }
+#app.modern-app .week-day.selected .dn { outline-color: var(--accent); }
+#app.modern-app .quick-add form { gap: 8px; margin-top: 15px; }
+#app.modern-app .quick-add input,
+#app.modern-app .quick-add select { border-radius: 8px; background: var(--bg-soft); }
+#app.modern-app .quick-add input { min-height: 38px; padding: 9px 11px; font-size: 12.5px; }
+#app.modern-app .quick-add select { min-height: 37px; padding: 8px 9px; font-size: 12px; }
+#app.modern-app .quick-add input:focus,
+#app.modern-app .quick-add select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+#app.modern-app .qa-submit { min-height: 39px; border-radius: 8px; background: var(--accent); color: #1a2427; box-shadow: none; }
+#app.modern-app .qa-submit:hover { box-shadow: 0 7px 16px color-mix(in srgb, var(--accent) 20%, transparent); }
+#app.modern-app .qa-hint { font-size: 10px; color: var(--text-faint); }
+
+#app.modern-app .notes-panel { border-top-color: var(--blue); }
+#app.modern-app .notes-list { gap: 6px; margin-top: 14px; }
+#app.modern-app .note-row { padding: 9px 8px; border: 1px solid transparent; border-radius: 8px; background: var(--bg-soft); }
+#app.modern-app .note-row:hover { border-color: var(--border); background: var(--card-hover); }
+#app.modern-app .note-dot { width: 9px; height: 9px; margin-top: 4px; border-radius: 50%; }
+#app.modern-app .note-row .task-title { font-size: 12px; font-weight: 620; }
+#app.modern-app .note-row .task-meta { margin-top: 3px; font-size: 10px; }
+
+#app.modern-app .statusbar {
+  min-height: 29px; padding: 7px clamp(20px, 4vw, 52px); border-top: 1px solid var(--border-soft);
+  background: var(--bg); font-size: 10px;
+}
+#app.modern-app .status-indicator { width: 6px; height: 6px; box-shadow: 0 0 0 3px color-mix(in srgb, var(--teal) 13%, transparent); }
+#app.modern-app .statusbar .mono { font-size: 9px; color: var(--text-faint); }
+
+@media (max-width: 900px) {
+  #app.modern-app .topbar { flex-wrap: wrap; min-height: 96px; }
+  #app.modern-app .topbar-actions { margin-left: auto; }
+  #app.modern-app .layout { gap: 18px; padding-top: 22px; }
+  #app.modern-app .side-col { flex-basis: 290px; width: 290px; max-width: 290px; }
+}
+
+@media (max-width: 700px) {
+  #app.modern-app .topbar { padding: 14px 16px 12px; gap: 12px; }
+  #app.modern-app .brand-lockup { min-width: auto; }
+  #app.modern-app .topbar-divider { display: none; }
+  #app.modern-app .progress-cluster { margin-left: auto; padding-left: 0; border-left: 0; }
+  #app.modern-app .progress-copy { display: none; }
+  #app.modern-app .topbar-actions { width: 100%; justify-content: flex-end; }
+  #app.modern-app .topbar .action-btn { min-width: 0; padding: 0 7px; }
+  #app.modern-app .btn-label { display: none; }
+  #app.modern-app .layout { display: flex; flex-direction: column; padding: 20px 16px 12px; overflow-y: auto; }
+  #app.modern-app .side-col { width: 100%; max-width: none; flex: 0 0 auto; overflow: visible; }
+  #app.modern-app .stat-cards { margin-bottom: 20px; }
+  #app.modern-app .task-tools { position: sticky; top: 0; z-index: 2; padding: 5px 0; background: var(--bg); }
+  #app.modern-app .view-mode-switch { width: 100%; }
+  #app.modern-app .mode-tab { flex: 1; min-width: 0; }
+  #app.modern-app .task-tools-row { width: 100%; }
+  #app.modern-app .task-filter-select { flex-basis: 104px; }
+  #app.modern-app .quadrant-board { grid-template-columns: 1fr; }
+  #app.modern-app .statusbar { padding: 7px 16px; }
+  #app.modern-app .statusbar .mono { display: none; }
+}
