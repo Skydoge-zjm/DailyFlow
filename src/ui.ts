@@ -224,7 +224,7 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
   }
   filterSelect.value = taskFilter;
   const countBadge = el("span", { class: "count-badge" }, String(openCount));
-  const viewTitle = () => taskView === "matrix" ? "重要性矩阵" : taskView === "projects" ? "项目任务树" : "时间安排";
+  const viewTitle = () => taskView === "matrix" ? "任务分布" : taskView === "projects" ? "项目目录" : "时间安排";
   const sectionTitle = el("h2", {}, viewTitle());
   const refreshTaskList = () => {
     if (taskView === "projects") {
@@ -398,8 +398,26 @@ function projectsBoard(data: Data, opts: RenderOpts, search: string, filter: Tas
     tasks.push(task);
     tasksByProject.set(task.project_id, tasks);
   }
-  for (const project of projects) {
-    const tasks = (tasksByProject.get(project.id) || []).filter((task) => filter === "all" || (filter === "open" ? !task.done : task.done));
+  const allProjectTasks = data.tasks;
+  const summaryOpen = allProjectTasks.filter((task) => !task.done).length;
+  const summaryDone = allProjectTasks.length - summaryOpen;
+  const summaryProjects = projects.filter((project) => !project.archived).length;
+  board.append(
+    el("div", { class: "project-summary" },
+      el("div", { class: "project-summary-lead" },
+        el("span", { class: "project-summary-kicker" }, "PROJECT CONTROL"),
+        el("strong", {}, "把任务推进到结果"),
+      ),
+      el("div", { class: "project-summary-stats" },
+        el("div", { class: "project-summary-stat" }, el("strong", {}, String(summaryProjects)), el("span", {}, "个项目")),
+        el("div", { class: "project-summary-stat" }, el("strong", {}, String(summaryOpen)), el("span", {}, "项进行中")),
+        el("div", { class: "project-summary-stat" }, el("strong", {}, String(summaryDone)), el("span", {}, "项已完成")),
+      ),
+    ),
+  );
+  for (const [projectIndex, project] of projects.entries()) {
+    const projectTasks = tasksByProject.get(project.id) || [];
+    const tasks = projectTasks.filter((task) => filter === "all" || (filter === "open" ? !task.done : task.done));
     const taskIds = new Set(tasks.map((task) => task.id));
     const projectMatches = query.length > 0
       && [project.name, project.description].some((value) => value.toLocaleLowerCase().includes(query));
@@ -410,8 +428,9 @@ function projectsBoard(data: Data, opts: RenderOpts, search: string, filter: Tas
       .filter((task) => !task.parent_id || !visibleIds.has(task.parent_id))
       .sort(taskOrder);
     const childrenByParent = taskChildren(visibleTasks);
-    const openCount = visibleTasks.filter((task) => !task.done).length;
-    const completedCount = visibleTasks.length - openCount;
+    const openCount = projectTasks.filter((task) => !task.done).length;
+    const completedCount = projectTasks.length - openCount;
+    const completion = projectTasks.length ? Math.round((completedCount / projectTasks.length) * 100) : 0;
     visibleCount += visibleTasks.length;
     const list = el("div", { class: "project-task-tree" });
     if (roots.length) {
@@ -463,20 +482,40 @@ function projectsBoard(data: Data, opts: RenderOpts, search: string, filter: Tas
         await opts.onCall(["project", project.archived ? "unarchive" : "archive", project.id]);
       },
     }, project.archived ? "恢复" : "归档");
-    board.append(
-      el("section", { class: `project-section${project.archived ? " is-archived" : ""}` },
+    const collapseButton = el("button", {
+      class: "project-collapse",
+      type: "button",
+      "aria-expanded": "true",
+      "aria-label": `折叠项目 ${project.name}`,
+      title: "折叠任务树",
+    }, "⌄");
+    collapseButton.addEventListener("click", () => {
+      const expanded = !list.hidden;
+      list.hidden = expanded;
+      collapseButton.textContent = expanded ? "›" : "⌄";
+      collapseButton.setAttribute("aria-expanded", String(!expanded));
+      collapseButton.title = expanded ? "展开任务树" : "折叠任务树";
+    });
+    const projectSection = el(
+      "section",
+      { class: `project-section${project.archived ? " is-archived" : ""}` },
         el("div", { class: "project-section-head" },
+          el("div", { class: "project-index" }, String(projectIndex + 1).padStart(2, "0")),
           el("div", { class: "project-heading" },
             el("h3", {}, project.name),
             el("span", { class: "project-task-count" }, `${openCount} 未完成 · ${completedCount} 已完成`),
           ),
-          el("div", { class: "project-actions" }, editButton, archive),
+          el("div", { class: "project-actions" }, editButton, archive, collapseButton),
         ),
         project.description ? el("p", { class: "project-description" }, project.description) : null,
+        el("div", { class: "project-progress-row" },
+          el("div", { class: "project-progress-track" }, el("i", { style: `width:${completion}%` })),
+          el("span", { class: "project-progress-value" }, `${completion}%`),
+        ),
         editForm,
-        list,
-      ),
+        el("div", { class: "project-tree-surface" }, list),
     );
+    board.append(projectSection);
   }
 
   const unassigned = data.tasks.filter((task) => !task.project_id && (filter === "all" || (filter === "open" ? !task.done : task.done)));
@@ -490,13 +529,22 @@ function projectsBoard(data: Data, opts: RenderOpts, search: string, filter: Tas
     const childrenByParent = taskChildren(visibleUnassigned);
     visibleCount += visibleUnassigned.length;
     const section = el("section", { class: "project-section project-unassigned" },
-      el("div", { class: "project-section-head" }, el("h3", {}, "未归属项目")),
+      el("div", { class: "project-section-head" },
+        el("div", { class: "project-index" }, "--"),
+        el("div", { class: "project-heading" },
+          el("h3", {}, "未归属项目"),
+          el("span", { class: "project-task-count" }, `${visibleUnassigned.filter((task) => !task.done).length} 未完成`),
+        ),
+      ),
+      el("p", { class: "project-description" }, "先归入项目，任务会更容易形成可推进的路径。"),
     );
+    const unassignedTree = el("div", { class: "project-tree-surface" });
     if (roots.length) {
-      section.append(...roots.map((task) => taskItem(task, opts, true, childrenByParent)));
+      unassignedTree.append(...roots.map((task) => taskItem(task, opts, true, childrenByParent)));
     } else {
-      section.append(el("div", { class: "project-empty" }, "任务关系有循环，无法显示此树"));
+      unassignedTree.append(el("div", { class: "project-empty" }, "任务关系有循环，无法显示此树"));
     }
+    section.append(unassignedTree);
     board.append(section);
   }
 
