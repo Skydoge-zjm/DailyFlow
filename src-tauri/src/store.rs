@@ -144,7 +144,7 @@ impl Store {
         loop {
             match FileExt::try_lock_exclusive(&file) {
                 Ok(()) => return Ok(FileLock { file }),
-                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                Err(error) if is_lock_contention(&error) => {
                     if start.elapsed().as_millis() >= timeout_ms as u128 {
                         return Err("获取数据锁超时（另一进程可能正在写入）".into());
                     }
@@ -226,6 +226,23 @@ impl Store {
             prune_backups(&backups, 10);
         }
         Ok(())
+    }
+}
+
+/// fs2 在 Windows 上会把 ERROR_LOCK_VIOLATION（33）和
+/// ERROR_SHARING_VIOLATION（32）映射为 ErrorKind::Other，而不是
+/// WouldBlock。两者都表示锁仍被占用，应继续等待到超时。
+fn is_lock_contention(error: &std::io::Error) -> bool {
+    if error.kind() == std::io::ErrorKind::WouldBlock {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        matches!(error.raw_os_error(), Some(32 | 33))
+    }
+    #[cfg(not(windows))]
+    {
+        false
     }
 }
 
