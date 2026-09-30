@@ -344,7 +344,10 @@ function projectsBoard(data: Data, opts: RenderOpts, search: string, filter: Tas
   const board = el("div", { class: "projects-board" });
   const query = search.trim().toLocaleLowerCase();
   let visibleCount = 0;
-  const createButton = el("button", { class: "mini-btn", type: "button" }, "+ 新建项目");
+  const createButton = el("button", { class: "mini-btn project-create-button", type: "button" },
+    el("span", { class: "project-create-glyph", "aria-hidden": "true" }, "+"),
+    el("span", {}, "新建项目"),
+  );
   const archivedButton = el("button", { class: "mini-btn", type: "button" }, showArchivedProjects ? "隐藏归档" : "显示归档");
   const projectName = el("input", { type: "text", placeholder: "项目名称", "aria-label": "项目名称" });
   const projectDescription = el("input", { type: "text", placeholder: "目标或说明（可选）", "aria-label": "项目说明" });
