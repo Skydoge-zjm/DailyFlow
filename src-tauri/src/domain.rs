@@ -313,7 +313,7 @@ impl Ctx {
     pub fn task_list_in_project(&self, scope: &str, tag: &str, project_id: &str) -> CmdResult {
         let mut d = self.load()?;
         let today = today_str();
-        let mut tasks: Vec<Task> = d.tasks.drain(..).collect();
+        let mut tasks = std::mem::take(&mut d.tasks);
         tasks.sort_by(|a, b| {
             a.date
                 .cmp(&b.date)
