@@ -51,6 +51,8 @@ description: 当 DailyFlow 已安装，且用户要求查询或修改项目、�
 - 完成父任务前需先完成全部子任务；新增未完成子任务或恢复子任务时，上级任务会自动恢复未完成状态。删除有子任务的任务会失败，清理时仍含未完成子任务的父任务会保留。
 - `normal` 表示普通任务或日程，`deadline` 表示有截止日期的事项，`goal` 表示长期目标；目标日期可选。`--kind` 可用 `normal`、`deadline`、`goal`；`--quadrant` 可用 `q1` 到 `q4`；`--repeat` 可用 `none`、`daily`、`weekly`、`monthly`；`--priority` 可用 `low`、`normal`、`high`。便签颜色可用 `yellow`、`green`、`blue`、`pink`、`purple`、`dark`。
 - `task list` 的常用范围有 `today`、`week`、`all`、`overdue`、`goal`、`deadline`、`open`、`q1` 至 `q4`，也可以传日期或关键词。
+- CLI 还支持这些等价别名：`task list ls`、`task delete del/rm`、`task undone undo`、`task clear-done cleardone`；项目根命令可写作 `project` 或 `projects`，便签根命令可写作 `note` 或 `sticky`，项目和便签的列表命令支持 `ls`。
+- 四象限汇总除了 `dailyflow matrix` 外，还支持 `dailyflow quadrants`；顶层帮助和版本也支持 `--help`/`-h`、`--version`/`-v`。顶层 `dailyflow undo` 用于撤销删除，`task undo <任务ID>` 则是取消该任务的完成状态，两者含义不同。
 - 日期常用格式包括 `today`、`tomorrow`、`+3`、星期名称和 `YYYY-MM-DD`；时间常用格式包括 `9`、`930`、`9:30` 和 `09:30`。完整格式及本地化写法以 `dailyflow help` 和 `docs/CLI.md` 为准。
 - `--tags` 接收逗号分隔的标签；`--tag` 是查询过滤条件。`task add` 的标题是位置参数，其余设置通过选项传入。
 - 相对日期按用户所在地的当前日期和通常语义解析；CLI 支持该表达时直接传入。只有日期含义无法合理判断且会导致不同结果时才追问。
