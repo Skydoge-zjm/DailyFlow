@@ -46,6 +46,29 @@ export function openCliPathPanel(): void {
     autostart.disabled = false;
   });
   const autostartRow = el("label", { class: "cli-path-autostart" }, autostart, "登录 Windows 时启动 DailyFlow");
+  const widgetPolicy = document.createElement("select");
+  widgetPolicy.className = "cli-path-policy-select";
+  widgetPolicy.setAttribute("aria-label", "悬浮窗启动策略");
+  widgetPolicy.append(
+    new Option("记住上次状态", "last_state"),
+    new Option("每次启动都显示", "always"),
+    new Option("只在主动打开时显示", "manual"),
+  );
+  widgetPolicy.value = window.__dailyflow.data.settings.widget_policy;
+  widgetPolicy.addEventListener("change", async () => {
+    widgetPolicy.disabled = true;
+    const policy = widgetPolicy.value as "always" | "last_state" | "manual";
+    const saved = await window.__dailyflow.saveSettings({
+      widget_policy: policy,
+      widget_visible: policy !== "manual",
+    });
+    if (!saved) widgetPolicy.value = window.__dailyflow.data.settings.widget_policy;
+    widgetPolicy.disabled = false;
+  });
+  const widgetPolicyRow = el("label", { class: "cli-path-autostart cli-path-policy-row" },
+    el("span", { class: "cli-path-policy-label" }, "悬浮窗启动策略"),
+    widgetPolicy,
+  );
 
   const closePanel = () => {
     panel.remove();
@@ -129,6 +152,7 @@ export function openCliPathPanel(): void {
     ),
     el("p", { class: "cli-path-description" }, "将 DailyFlow 所在目录加入当前 Windows 用户的 PATH，之后可在终端或 AI 助手中直接运行 dailyflow。"),
     autostartRow,
+    widgetPolicyRow,
     el("div", { class: "tp-sub" }, "PATH 状态"),
     statusRow,
     el("div", { class: "cli-path-directory-field" },

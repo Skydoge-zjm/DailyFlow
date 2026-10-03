@@ -59,6 +59,8 @@ export interface Settings {
   autostart: boolean;
   widget_visible: boolean;
   widget_pinned: boolean;
+  widget_policy: "always" | "last_state" | "manual";
+  onboarding_completed: boolean;
   widget_x: number;
   widget_y: number;
   widget_w: number;
@@ -72,4 +74,18 @@ export interface Data {
   projects: Project[];
   notes: Note[];
   settings: Settings;
+}
+
+export interface SyncStatus {
+  state: "synced" | "retrying";
+  attempt: number;
+  message?: string;
+  code?: string;
+}
+
+export interface CommandResult {
+  ok: boolean;
+  data?: unknown;
+  code?: string;
+  error?: string;
 }

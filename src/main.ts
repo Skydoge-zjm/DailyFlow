@@ -5,10 +5,12 @@ import {
   renderApp,
   el,
   openTaskEditor,
+  handleWorkspaceShortcut,
 } from "./ui.ts";
 import type { RenderOpts } from "./ui.ts";
 import { applyTheme, sanitizeThemeOverrides } from "./themes.ts";
-import type { Data, Note, Settings, Task } from "./types.ts";
+import type { CommandResult, Data, Note, Settings, SyncStatus, Task } from "./types.ts";
+import { closeOnboarding, openOnboarding } from "./onboarding.ts";
 
 export {};
 
@@ -18,10 +20,12 @@ declare global {
       data: Data;
       selected: string;
       saveSettings: (patch: Partial<Settings>) => Promise<boolean>;
-      call: (args: string[]) => Promise<{ ok: boolean; data?: unknown; error?: string }>;
+      call: (args: string[]) => Promise<CommandResult>;
       rerender: () => void;
       toast: (msg: string, isErr?: boolean) => void;
       undoToast: (msg: string, onUndo: () => Promise<void>) => void;
+      syncStatus: SyncStatus;
+      newNote: () => Promise<void>;
     };
   }
 }
@@ -32,8 +36,10 @@ const DEFAULT_SETTINGS: Settings = {
   theme_overrides: {},
   sticky_opacity: 0.92,
   autostart: false,
-  widget_visible: true,
+  widget_visible: false,
   widget_pinned: true,
+  widget_policy: "last_state",
+  onboarding_completed: false,
   widget_x: 0,
   widget_y: 0,
   widget_w: 236,
@@ -50,6 +56,7 @@ let dataRevision = 0;
 let reloadGeneration = 0;
 let selectedDate = todayStr();
 let toastTimer: number | undefined;
+let syncStatus: SyncStatus = { state: "synced", attempt: 0 };
 let currentRenderOpts: RenderOpts | undefined;
 const previewMode = new URLSearchParams(location.search).has("preview");
 
@@ -113,10 +120,15 @@ function undoToast(msg: string, onUndo: () => Promise<void>): void {
   }, 5000);
 }
 
-async function call(args: string[]): Promise<{ ok: boolean; data?: unknown; error?: string }> {
-  const res = await invoke<{ ok: boolean; data?: unknown; error?: string }>("fe_call", { args });
+async function call(args: string[]): Promise<CommandResult> {
+  const res = await invoke<CommandResult>("fe_call", { args });
   if (!res.ok) toast(res.error || "操作失败", true);
   return res;
+}
+
+async function createNote(): Promise<void> {
+  const res = await call(["note", "add", "（在这里写下内容）"]);
+  if (res.ok) await reload();
 }
 
 async function reload(): Promise<void> {
@@ -194,15 +206,13 @@ function render(): void {
       if (!result.ok) return;
       await invoke("fe_note_window", { id: note.id, note: note as unknown as Record<string, unknown> });
     },
-    onNewNote: async () => {
-      const res = await call(["note", "add", "（在这里写下内容）"]);
-      if (res.ok) {
-        await reload();
-      }
-    },
+    syncStatus,
+    onNewNote: createNote,
   };
   currentRenderOpts = opts;
   renderApp(appEl, opts);
+  if (!previewMode && !data.settings.onboarding_completed) openOnboarding();
+  else closeOnboarding();
   if (restoreFocus) {
     const next = appEl.querySelector<HTMLElement>(`[data-focus-key="${restoreFocus.key}"]`);
     next?.focus({ preventScroll: true });
@@ -214,6 +224,48 @@ function render(): void {
   }
 }
 
+function isTextEditingTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || (target instanceof HTMLElement && target.isContentEditable);
+}
+
+function focusElement(selector: string): void {
+  const element = document.querySelector<HTMLElement>(selector);
+  element?.focus({ preventScroll: true });
+  if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) element.select();
+}
+
+function handleAppShortcut(event: KeyboardEvent): void {
+  const key = event.key.toLowerCase();
+  const editing = isTextEditingTarget(event.target);
+  if (event.ctrlKey && !event.altKey && !event.metaKey && key === "k") {
+    event.preventDefault();
+    focusElement(".quick-add-title");
+    return;
+  }
+  if (event.ctrlKey && !event.altKey && !event.metaKey && key === "f") {
+    event.preventDefault();
+    focusElement(".task-search");
+    return;
+  }
+  if (event.ctrlKey && !event.altKey && !event.metaKey && event.shiftKey && key === "n" && !editing) {
+    event.preventDefault();
+    void createNote();
+    return;
+  }
+  if (event.ctrlKey && !event.altKey && !event.metaKey && key === "enter") {
+    const form = event.target instanceof HTMLElement ? event.target.closest("form") : null;
+    if (form) {
+      event.preventDefault();
+      form.requestSubmit();
+    }
+    return;
+  }
+  if (event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey && ["1", "2", "3"].includes(key) && !editing) {
+    event.preventDefault();
+    handleWorkspaceShortcut(Number(key));
+  }
+}
+
 // ---------- 事件 ----------
 window.addEventListener("DOMContentLoaded", async () => {
   // widget / note 子窗口有自己的入口模块；主逻辑只在主窗口跑
@@ -221,6 +273,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     return;
   }
 
+  window.addEventListener("keydown", handleAppShortcut);
   window.__dailyflow = {
     get data() {
       return data;
@@ -231,6 +284,8 @@ window.addEventListener("DOMContentLoaded", async () => {
     rerender: render,
     toast,
     undoToast,
+    get syncStatus() { return syncStatus; },
+    newNote: createNote,
   };
 
   if (previewMode) {
@@ -242,6 +297,15 @@ window.addEventListener("DOMContentLoaded", async () => {
   // @ts-expect-error Tauri event API
   const { listen } = window.__TAURI__.event;
   let rafPending = false;
+  await listen("sync-status", (evt: { payload: SyncStatus }) => {
+    syncStatus = {
+      state: evt.payload?.state === "retrying" ? "retrying" : "synced",
+      attempt: Number(evt.payload?.attempt || 0),
+      code: (evt.payload as SyncStatus)?.code,
+      message: evt.payload?.message,
+    };
+    render();
+  });
   await listen("data-changed", (evt: { payload: Data }) => {
     dataRevision += 1;
     reloadGeneration += 1;

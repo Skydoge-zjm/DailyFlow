@@ -1,13 +1,14 @@
-import type { Data, Note, Quadrant, Settings, Task } from "./types.ts";
+import type { CommandResult, Data, Note, Quadrant, Settings, SyncStatus, Task } from "./types.ts";
 
 export interface RenderOpts {
   data: Data;
   selectedDate: string;
   onSelectDate: (date: string) => void;
-  onCall: (args: string[]) => Promise<{ ok: boolean; data?: unknown; error?: string }>;
+  onCall: (args: string[]) => Promise<CommandResult>;
   onSettings: (patch: Partial<Settings>) => Promise<boolean>;
   onOpenNote: (note: Note) => void;
   onNewNote: () => void;
+  syncStatus: SyncStatus;
 }
 
 export function el<K extends keyof HTMLElementTagNameMap>(

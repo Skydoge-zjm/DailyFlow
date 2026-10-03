@@ -349,7 +349,15 @@ fn sync_note_windows_inner(app: &AppHandle, data: &Data, previous: Option<&Data>
         }
     }
 
-    if data.settings.widget_visible {
+    let widget_visible = match previous {
+        None => match data.settings.widget_policy {
+            crate::model::WidgetPolicy::Always => true,
+            crate::model::WidgetPolicy::LastState => data.settings.widget_visible,
+            crate::model::WidgetPolicy::Manual => false,
+        },
+        Some(_) => data.settings.widget_visible,
+    };
+    if widget_visible {
         let became_visible = previous
             .map(|old| !old.settings.widget_visible)
             .unwrap_or(true);

@@ -14,7 +14,7 @@ let state = {
 };
 
 export function quickAdd(opts: RenderOpts, selectedDate: string, projectMode = false): HTMLElement {
-  const title = el("input", { placeholder: "捕捉一项计划…", "aria-label": "任务标题", "data-focus-key": "quick-title" });
+  const title = el("input", { class: "quick-add-title", placeholder: "捕捉一项计划…", "aria-label": "任务标题", "data-focus-key": "quick-title" });
   const time = el("input", { placeholder: "时间 / 目标日", "aria-label": "时间或目标日期", "data-focus-key": "quick-time" });
   const priority = document.createElement("select");
   priority.dataset.focusKey = "quick-priority";

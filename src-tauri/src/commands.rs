@@ -2,6 +2,7 @@ use serde_json::Value;
 use tauri::{AppHandle, Manager};
 
 use crate::domain::Ctx;
+use crate::error::AppResult;
 use crate::store::Store;
 
 fn optional_string<'a>(patch: &'a Value, key: &str) -> Result<Option<&'a str>, String> {
@@ -51,26 +52,26 @@ fn ctx(_handle: &AppHandle) -> Ctx {
 // ---------- 前端调用的命令 ----------
 
 #[tauri::command]
-pub fn fe_cli_path_status() -> Result<crate::cli_path::CliPathStatus, String> {
-    crate::cli_path::status()
+pub fn fe_cli_path_status() -> AppResult<crate::cli_path::CliPathStatus> {
+    Ok(crate::cli_path::status()?)
 }
 
 #[tauri::command]
-pub fn fe_cli_path_add() -> Result<crate::cli_path::CliPathStatus, String> {
-    crate::cli_path::add_to_user_path()
+pub fn fe_cli_path_add() -> AppResult<crate::cli_path::CliPathStatus> {
+    Ok(crate::cli_path::add_to_user_path()?)
 }
 
 #[tauri::command]
-pub fn fe_load_ui() -> Result<crate::model::UiData, String> {
+pub fn fe_load_ui() -> AppResult<crate::model::UiData> {
     let c = Ctx {
         store: Store::new(crate::app_paths()),
     };
-    c.store.load_ui()
+    Ok(c.store.load_ui()?)
 }
 
 /// 合并保存设置字段，避免前端携带的旧整份 Data 覆盖其他窗口刚保存的任务或便签。
 #[tauri::command]
-pub fn fe_save_settings(app: AppHandle, patch: Value) -> Result<(), String> {
+pub fn fe_save_settings(app: AppHandle, patch: Value) -> AppResult<()> {
     let c = ctx(&app);
     let patch_object = patch
         .as_object()
@@ -83,6 +84,8 @@ pub fn fe_save_settings(app: AppHandle, patch: Value) -> Result<(), String> {
         "autostart",
         "widget_visible",
         "widget_pinned",
+        "widget_policy",
+        "onboarding_completed",
         "widget_x",
         "widget_y",
     ];
@@ -90,7 +93,7 @@ pub fn fe_save_settings(app: AppHandle, patch: Value) -> Result<(), String> {
         .keys()
         .find(|key| !ALLOWED_FIELDS.contains(&key.as_str()))
     {
-        return Err(format!("未知设置字段: {}", unknown));
+        return Err(format!("未知设置字段: {}", unknown).into());
     }
     let before = c.store.load()?;
     let previous_autostart = before.settings.autostart;
@@ -139,6 +142,17 @@ pub fn fe_save_settings(app: AppHandle, patch: Value) -> Result<(), String> {
         if let Some(value) = optional_bool(&patch, "widget_pinned")? {
             data.settings.widget_pinned = value;
         }
+        if let Some(policy) = optional_string(&patch, "widget_policy")? {
+            data.settings.widget_policy = match policy {
+                "always" => crate::model::WidgetPolicy::Always,
+                "last_state" | "last-state" => crate::model::WidgetPolicy::LastState,
+                "manual" => crate::model::WidgetPolicy::Manual,
+                other => return Err(format!("无效悬浮窗策略: {}", other)),
+            };
+        }
+        if let Some(value) = optional_bool(&patch, "onboarding_completed")? {
+            data.settings.onboarding_completed = value;
+        }
         if let Some(value) = optional_i64(&patch, "widget_x")? {
             data.settings.widget_x =
                 i32::try_from(value).map_err(|_| "widget_x 超出范围".to_string())?;
@@ -159,11 +173,10 @@ pub fn fe_save_settings(app: AppHandle, patch: Value) -> Result<(), String> {
                 Ok(())
             });
             return match rollback {
-                Ok(()) => Err(error),
-                Err(rollback_error) => Err(format!(
-                    "{}；恢复开机自启设置失败: {}",
-                    error, rollback_error
-                )),
+                Ok(()) => Err(error.into()),
+                Err(rollback_error) => {
+                    Err(format!("{}；恢复开机自启设置失败: {}", error, rollback_error).into())
+                }
             };
         }
     }
@@ -185,13 +198,13 @@ pub fn fe_call(app: AppHandle, args: Vec<String>) -> Value {
             }
             v
         }
-        Err(e) => serde_json::json!({ "ok": false, "error": e }),
+        Err(e) => e.json(),
     }
 }
 
 #[tauri::command]
-pub fn fe_note_window(app: AppHandle, id: String, note: crate::model::Note) -> Result<(), String> {
-    crate::windows::open_note_window(&app, &id, &note)
+pub fn fe_note_window(app: AppHandle, id: String, note: crate::model::Note) -> AppResult<()> {
+    Ok(crate::windows::open_note_window(&app, &id, &note)?)
 }
 
 #[tauri::command]
@@ -215,7 +228,7 @@ pub fn fe_set_note_pos(
     w: f64,
     h: f64,
     monitor: String,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let c = ctx(&app);
     c.store.with_lock(2000, |d| {
         let n = d
@@ -228,7 +241,8 @@ pub fn fe_set_note_pos(
         n.monitor = monitor;
         n.updated_at = crate::timeparse::now_iso();
         Ok(())
-    })
+    })?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -243,8 +257,8 @@ pub fn fe_show_main(app: AppHandle) {
 // ---------- 今日悬浮窗 ----------
 
 #[tauri::command]
-pub fn fe_open_widget(app: AppHandle) -> Result<(), String> {
-    crate::windows::open_widget_window(&app)
+pub fn fe_open_widget(app: AppHandle) -> AppResult<()> {
+    Ok(crate::windows::open_widget_window(&app)?)
 }
 
 #[tauri::command]
@@ -260,7 +274,7 @@ pub fn fe_widget_set_pos(
     w: i32,
     h: i32,
     monitor: String,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let c = Ctx {
         store: Store::new(crate::app_paths()),
     };
@@ -269,7 +283,7 @@ pub fn fe_widget_set_pos(
 }
 
 #[tauri::command]
-pub fn fe_widget_pin(app: AppHandle, pinned: bool) -> Result<(), String> {
+pub fn fe_widget_pin(app: AppHandle, pinned: bool) -> AppResult<()> {
     let c = Ctx {
         store: Store::new(crate::app_paths()),
     };
@@ -282,7 +296,7 @@ pub fn fe_widget_pin(app: AppHandle, pinned: bool) -> Result<(), String> {
 
 /// 便签窗口置顶切换（窗口的 always_on_top + 数据的 pinned 字段）
 #[tauri::command]
-pub fn fe_note_pin_window(app: AppHandle, id: String, pin: bool) -> Result<(), String> {
+pub fn fe_note_pin_window(app: AppHandle, id: String, pin: bool) -> AppResult<()> {
     if let Some(w) = app.get_webview_window(&crate::windows::note_label(&id)) {
         let _ = w.set_always_on_top(pin);
     }
@@ -290,7 +304,7 @@ pub fn fe_note_pin_window(app: AppHandle, id: String, pin: bool) -> Result<(), S
 }
 
 #[tauri::command]
-pub fn fe_widget_close(app: AppHandle) -> Result<(), String> {
+pub fn fe_widget_close(app: AppHandle) -> AppResult<()> {
     let c = Ctx {
         store: Store::new(crate::app_paths()),
     };

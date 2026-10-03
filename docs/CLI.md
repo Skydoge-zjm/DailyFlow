@@ -1,7 +1,7 @@
 # DailyFlow CLI 参考（AI 必读）
 
 > 本文档面向 **AI agent**。读完即可用 CLI 完成对 DailyFlow 的全部操作，无需任何 GUI。
-> `dailyflow help` 默认输出便于阅读的分组文本；`dailyflow help --json` 输出机器可读帮助。其他命令输出**单行 JSON**：`{"ok":true,"data":...}` 或 `{"ok":false,"error":"..."}`；exit code 0=成功，1=失败。
+> `dailyflow help` 默认输出便于阅读的分组文本；`dailyflow help --json` 输出机器可读帮助。其他命令输出**单行 JSON**：`{"ok":true,"data":...}` 或 `{"ok":false,"code":"...","error":"..."}`；exit code 0=成功，1=失败。失败时优先依据 `code` 做程序化处理，不要依赖中文 `error` 文本。
 
 ## 0. 可执行文件位置
 
@@ -181,7 +181,7 @@ dailyflow task list overdue
 
 1. **幂等谨慎**：`task add` 会直接创建，建议先 `task list <关键词>` 查重。
 2. **ID 是唯一句柄**：所有 edit/done/delete 都用 `t_xxxxxx` / `n_xxxxxx` 形式的 id。
-3. **错误处理**：收到 `{"ok":false,"error":...}` 时把 error 转述给用户，不要重试同一条命令超过 1 次。
+3. **错误处理**：收到 `{"ok":false,"code":"...","error":...}` 时把 error 转述给用户，并依据 code 判断是否可重试；不要对同一条命令盲目重试超过 1 次。
 4. **便签显示**：`note add` 默认 visible=true；GUI 运行中会立即弹出到桌面。
 5. **批量操作**：逐条执行即可，CLI 每次运行 <50ms。
 6. **改期语义**：`task move <id> tomorrow` = 保留时间改日期。

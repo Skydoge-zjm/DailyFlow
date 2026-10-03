@@ -91,7 +91,9 @@
   "settings": {
     "theme": "dark",                 // dark | light | auto
     "sticky_opacity": 0.92,
-    "autostart": false
+    "autostart": false,
+    "widget_policy": "last_state",   // always | last_state | manual
+    "onboarding_completed": true
   }
 }
 ```
@@ -157,8 +159,16 @@ dailyflow.exe day today
 src-tauri/src/
 ├── main.rs            # 进程入口
 ├── lib.rs             # CLI 分流、Tauri 生命周期和后台任务
-├── cli.rs             # 参数校验、命令分发和 JSON 输出
-├── domain.rs          # 任务、便签、提醒、统计和撤销规则
+├── cli.rs             # 参数校验、兼容分发和 JSON 输出
+├── command.rs         # CLI/Tauri 共用的类型化内部命令
+├── error.rs           # 统一错误码与结构化错误响应
+├── domain/            # 领域规则，按任务/项目/便签/设置/查询拆分
+│   ├── mod.rs         # Ctx、共享辅助函数与测试
+│   ├── task.rs        # 任务、重复、提醒和撤销相关操作
+│   ├── project.rs     # 项目与任务树
+│   ├── note.rs        # 桌面便签与悬浮窗状态
+│   ├── settings.rs    # 主题与悬浮窗设置
+│   └── queries.rs     # 日视图、统计、矩阵和 dump
 ├── store.rs           # 跨进程锁、JSON 加载、原子保存和备份
 ├── model.rs           # Task / Note / Settings / Data + serde
 ├── timeparse.rs       # 日期、时间和本地时间格式化
@@ -171,7 +181,28 @@ src-tauri/src/
 
 **GUI 实时性**：后台线程每秒检查 `data.json` 修改时间，并比较 Rust 数据快照；任务、便签内容和设置变化时发送不含撤销历史的界面快照，各窗口按帧合并更新。便签和悬浮窗的位置/尺寸保存不会触发所有窗口刷新。初始界面读取也只解析任务、便签和设置字段。存储写入使用跨进程文件锁，避免 CLI 和 GUI 的并发读改写相互覆盖。
 
-## 7. 里程碑
+## 7. 前端模块划分
+
+主窗口采用原生 DOM，但按职责拆分为多个可独立维护的视图模块：
+
+```text
+src/
+├── ui.ts              # 主窗口编排、日期/筛选状态和布局
+├── ui-task-card.ts    # 任务卡片、子任务树和行内编辑
+├── ui-projects.ts     # 项目工作区与项目树
+├── ui-matrix.ts       # 四象限视图
+├── ui-metrics.ts      # 统计卡片与进度环
+├── ui-calendar.ts     # 周视图日历
+└── ui-shared.ts       # DOM 工具、共享类型和四象限工具
+```
+
+GUI 和 CLI 的数据操作优先经过 `command.rs` 的类型化命令；为保持旧版 CLI 兼容，尚未迁移的命令仍会走 legacy parser。错误统一返回 `code` 和 `error` 字段，例如：
+
+```json
+{"ok":false,"code":"NOT_FOUND","error":"任务不存在: t_xxxxxx"}
+```
+
+## 8. 里程碑
 
 1. **M1** 数据层 + CLI 全命令（headless 可独立验收）✅ 本仓库首要交付
 2. **M2** 主窗口 UI（今日视图 + 周历 + 快速添加）✅

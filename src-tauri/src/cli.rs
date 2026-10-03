@@ -1,7 +1,9 @@
 use serde_json::{json, Value};
 use std::io::Write;
 
+use crate::command::{execute, Command};
 use crate::domain::{Ctx, TaskAddInput, TaskEditPatch};
+use crate::error::AppResult;
 use crate::store::Store;
 
 /// CLI 入口：args 为去掉 argv[0] 后的参数。
@@ -21,12 +23,15 @@ pub fn run_cli(args: Vec<String>) -> i32 {
             0
         }
         Err(e) => {
-            print_json(&json!({ "ok": false, "error": e }));
+            print_json(&e.json());
             1
         }
     }
 }
 
+fn dispatch(ctx: &Ctx, args: &[String]) -> AppResult<Value> {
+    execute(ctx, Command::parse(args)?)
+}
 fn is_text_help_request(args: &[String]) -> bool {
     args.len() == 1 && matches!(args[0].as_str(), "help" | "--help" | "-h")
 }
@@ -229,7 +234,7 @@ fn first_positional(
     None
 }
 
-fn dispatch(ctx: &Ctx, args: &[String]) -> Result<Value, String> {
+pub fn dispatch_legacy(ctx: &Ctx, args: &[String]) -> Result<Value, String> {
     let cmd = need(args, 0, "command")?.to_lowercase();
     let rest = &args[1..];
     if matches!(cmd.as_str(), "help" | "--help" | "-h") {
@@ -554,7 +559,7 @@ fn help_json_value() -> Value {
         "ok": true,
         "name": "DailyFlow CLI",
         "version": env!("CARGO_PKG_VERSION"),
-        "output_format": "help 默认输出可读文本；help --json 输出此结构化 JSON。其他命令输出单行 JSON：{\"ok\":true,\"data\":...} 或 {\"ok\":false,\"error\":\"...\"}。exit 0=成功 1=失败。",
+        "output_format": "help 默认输出可读文本；help --json 输出此结构化 JSON。其他命令输出单行 JSON：{\"ok\":true,\"data\":...} 或 {\"ok\":false,\"code\":\"...\",\"error\":\"...\"}。exit 0=成功 1=失败。",
         "date_formats": ["today", "tomorrow", "yesterday", "+N", "-N", "mon/tue/wed/thu/fri/sat/sun", "周一..周日", "YYYY-MM-DD"],
         "time_formats": ["9", "930", "9:30", "09:30", "9点半", "下午3", "下午3点一刻", "18点"],
         "commands": {
@@ -607,7 +612,7 @@ fn help_json_value() -> Value {
 }
 
 // 供 Tauri commands（fe_call）复用命令分发
-pub fn dispatch_pub(ctx: &Ctx, args: &[String]) -> Result<Value, String> {
+pub fn dispatch_pub(ctx: &Ctx, args: &[String]) -> AppResult<Value> {
     dispatch(ctx, args)
 }
 

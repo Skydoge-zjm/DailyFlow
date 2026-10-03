@@ -1,8 +1,10 @@
 mod autostart;
 mod cli;
 mod cli_path;
+mod command;
 mod commands;
 mod domain;
+mod error;
 mod model;
 mod store;
 mod timeparse;
@@ -17,12 +19,26 @@ use tauri::{Manager, RunEvent};
 struct SyncState {
     snapshot: Arc<Mutex<SyncSnapshot>>,
     dispatch: Arc<Mutex<()>>,
+    status: Arc<Mutex<SyncStatus>>,
 }
 
 struct SyncSnapshot {
     modified: Option<std::time::SystemTime>,
     generation: u64,
     data: Arc<model::Data>,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct SyncStatus {
+    state: SyncStateKind,
+    attempt: u32,
+    message: Option<String>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SyncStateKind {
+    Synced,
+    Retrying,
 }
 
 impl SyncState {
@@ -34,6 +50,11 @@ impl SyncState {
                 data: Arc::new(data),
             })),
             dispatch: Arc::new(Mutex::new(())),
+            status: Arc::new(Mutex::new(SyncStatus {
+                state: SyncStateKind::Synced,
+                attempt: 0,
+                message: None,
+            })),
         }
     }
 }
@@ -102,58 +123,119 @@ fn run_gui() {
             windows::sync_note_windows(app.handle(), &data);
             update_tray_from_data(app.handle(), &data);
 
-            // 用强类型快照检测 CLI 外部修改；窗口几何变化不触发界面刷新。
+            // 用文件 mtime 检测 CLI 外部修改；失败时保留未消费的 mtime，按退避策略重试。
             let handle = app.handle().clone();
             let sync_state = app.state::<SyncState>().inner().clone();
-            std::thread::spawn(move || loop {
-                std::thread::sleep(std::time::Duration::from_secs(1));
-                let Some(cur) = store_mtime(&store.path) else {
-                    continue;
-                };
-                let generation = {
-                    let snapshot = sync_state
-                        .snapshot
-                        .lock()
-                        .unwrap_or_else(|poisoned| poisoned.into_inner());
-                    if snapshot.modified == Some(cur) {
-                        continue;
-                    }
-                    snapshot.generation
-                };
-                match store.load() {
-                    Ok(data) => {
-                        let data = Arc::new(data);
-                        let _dispatch = sync_state
-                            .dispatch
-                            .lock()
-                            .unwrap_or_else(|poisoned| poisoned.into_inner());
-                        let previous = {
-                            let mut snapshot = sync_state
-                                .snapshot
-                                .lock()
-                                .unwrap_or_else(|poisoned| poisoned.into_inner());
-                            if snapshot.generation != generation {
-                                continue;
+            std::thread::spawn(move || {
+                let mut retry_delay = std::time::Duration::from_secs(1);
+                let mut retrying = false;
+                loop {
+                    std::thread::sleep(retry_delay);
+                    let Some(cur) = store_mtime(&store.path) else {
+                        // 新安装时 data.json 尚不存在，这是正常的空数据状态，不应显示错误。
+                        if !store.path.exists() {
+                            if retrying {
+                                retrying = false;
+                                publish_sync_status(
+                                    &handle,
+                                    &sync_state,
+                                    SyncStatus {
+                                        state: SyncStateKind::Synced,
+                                        attempt: 0,
+                                        message: None,
+                                    },
+                                );
                             }
-                            let previous = std::mem::replace(&mut snapshot.data, data.clone());
-                            snapshot.modified = Some(cur);
-                            snapshot.generation = snapshot.generation.wrapping_add(1);
-                            previous
-                        };
-                        notify_data_changed(&handle, &previous, &data);
-                    }
-                    Err(error) => {
-                        let _dispatch = sync_state
-                            .dispatch
-                            .lock()
-                            .unwrap_or_else(|poisoned| poisoned.into_inner());
-                        let mut snapshot = sync_state
+                            retry_delay = std::time::Duration::from_secs(1);
+                            continue;
+                        }
+                        if !retrying {
+                            retrying = true;
+                            publish_sync_status(
+                                &handle,
+                                &sync_state,
+                                SyncStatus {
+                                    state: SyncStateKind::Retrying,
+                                    attempt: 1,
+                                    message: Some("无法读取数据文件，正在重试".into()),
+                                },
+                            );
+                        }
+                        retry_delay = std::cmp::min(
+                            retry_delay.saturating_mul(2),
+                            std::time::Duration::from_secs(30),
+                        );
+                        continue;
+                    };
+                    let generation = {
+                        let snapshot = sync_state
                             .snapshot
                             .lock()
                             .unwrap_or_else(|poisoned| poisoned.into_inner());
-                        if snapshot.generation == generation {
-                            snapshot.modified = Some(cur);
-                            eprintln!("读取外部数据变更失败: {}", error);
+                        if snapshot.modified == Some(cur) && !retrying {
+                            continue;
+                        }
+                        snapshot.generation
+                    };
+                    match store.load() {
+                        Ok(data) => {
+                            let data = Arc::new(data);
+                            let _dispatch = sync_state
+                                .dispatch
+                                .lock()
+                                .unwrap_or_else(|poisoned| poisoned.into_inner());
+                            let previous = {
+                                let mut snapshot = sync_state
+                                    .snapshot
+                                    .lock()
+                                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                                if snapshot.generation != generation {
+                                    continue;
+                                }
+                                let previous = std::mem::replace(&mut snapshot.data, data.clone());
+                                snapshot.modified = Some(cur);
+                                snapshot.generation = snapshot.generation.wrapping_add(1);
+                                previous
+                            };
+                            notify_data_changed(&handle, &previous, &data);
+                            retrying = false;
+                            retry_delay = std::time::Duration::from_secs(1);
+                            publish_sync_status(
+                                &handle,
+                                &sync_state,
+                                SyncStatus {
+                                    state: SyncStateKind::Synced,
+                                    attempt: 0,
+                                    message: None,
+                                },
+                            );
+                        }
+                        Err(error) => {
+                            retrying = true;
+                            let attempt = {
+                                let status = sync_state
+                                    .status
+                                    .lock()
+                                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                                status.attempt.saturating_add(1)
+                            };
+                            publish_sync_status(
+                                &handle,
+                                &sync_state,
+                                SyncStatus {
+                                    state: SyncStateKind::Retrying,
+                                    attempt,
+                                    message: Some(error),
+                                },
+                            );
+                            eprintln!(
+                                "读取外部数据变更失败，将重试: {}",
+                                sync_state_status_message(&sync_state)
+                            );
+                            retry_delay = std::cmp::min(
+                                retry_delay.saturating_mul(2),
+                                std::time::Duration::from_secs(30),
+                            );
                         }
                     }
                 }
@@ -225,6 +307,44 @@ fn run_gui() {
                 // 保持托盘常驻：不退出，除非用户显式退出
             }
         });
+}
+
+fn sync_state_status_message(state: &SyncState) -> String {
+    state
+        .status
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .message
+        .clone()
+        .unwrap_or_else(|| "未知同步错误".into())
+}
+
+fn publish_sync_status(app: &tauri::AppHandle, state: &SyncState, next: SyncStatus) {
+    let changed = {
+        let mut current = state
+            .status
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if *current == next {
+            false
+        } else {
+            *current = next.clone();
+            true
+        }
+    };
+    if !changed {
+        return;
+    }
+    use tauri::Emitter;
+    let _ = app.emit("sync-status", serde_json::json!({
+        "state": match next.state {
+            SyncStateKind::Synced => "synced",
+            SyncStateKind::Retrying => "retrying",
+        },
+        "attempt": next.attempt,
+        "code": next.message.as_ref().map(|message| crate::error::sync_error(message.clone()).code),
+        "message": next.message,
+    }));
 }
 
 fn store_mtime(p: &std::path::Path) -> Option<std::time::SystemTime> {

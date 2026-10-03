@@ -1,29 +1,37 @@
 // 主窗口 UI 渲染（无框架，纯 DOM）
-import type { Data, Quadrant, Task } from "./types.ts";
+import type { Task } from "./types.ts";
 import { el, taskQuadrant, type RenderOpts } from "./ui-shared.ts";
-import { taskClearDoneArgs, taskDeleteArgs, taskEditArgs, taskToggleArgs, undoArgs } from "./cli-args.ts";
+import { taskClearDoneArgs, undoArgs } from "./cli-args.ts";
 import { openTaskEditor } from "./task-editor.ts";
 import { quickAdd } from "./quick-add.ts";
 import { notesPanel } from "./notes-panel.ts";
 import { openThemePanel } from "./theme-panel.ts";
 import { openCliPathPanel } from "./cli-path-panel.ts";
+import { renderProjectsBoard, type TaskFilter } from "./ui-projects.ts";
+import { renderMatrixBoard } from "./ui-matrix.ts";
+import { statCards, dayProgress, buildRing } from "./ui-metrics.ts";
+import { taskItem } from "./ui-task-card.ts";
+import { weekCal } from "./ui-calendar.ts";
+import { openExportPanel } from "./export-panel.ts";
 
 export { el, openTaskEditor };
 export type { RenderOpts };
 
 const WD = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
-const QUADRANT_META: Record<Quadrant, { label: string; short: string }> = {
-  q1: { label: "重要且紧急", short: "Q1" },
-  q2: { label: "重要不紧急", short: "Q2" },
-  q3: { label: "不重要但紧急", short: "Q3" },
-  q4: { label: "不重要不紧急", short: "Q4" },
-};
 let taskSearch = "";
 type WorkspaceMode = "day" | "projects" | "matrix";
-type TaskFilter = "all" | "open" | "done";
 let taskView: WorkspaceMode = "day";
 let taskFilter: TaskFilter = "all";
 let showArchivedProjects = false;
+
+export function handleWorkspaceShortcut(index: number): void {
+  const modes: WorkspaceMode[] = ["day", "projects", "matrix"];
+  const next = modes[index - 1];
+  if (!next) return;
+  taskView = next;
+  taskSearch = "";
+  window.__dailyflow?.rerender();
+}
 
 function fmtDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -97,6 +105,10 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
       el("button", { class: "icon-btn action-btn", title: "主题与外观", "aria-label": "主题与外观", onclick: () => openThemePanel(opts) },
         el("span", { class: "btn-glyph", "aria-hidden": "true" }, "✦"),
         el("span", { class: "btn-label" }, "外观"),
+      ),
+      el("button", { class: "icon-btn action-btn", title: "导出工作区", "aria-label": "导出工作区", onclick: () => openExportPanel(data) },
+        el("span", { class: "btn-glyph", "aria-hidden": "true" }, "↓"),
+        el("span", { class: "btn-label" }, "导出"),
       ),
       el("button", { class: "icon-btn action-btn", title: "命令行设置", "aria-label": "命令行设置", onclick: openCliPathPanel },
         el("span", { class: "btn-glyph", "aria-hidden": "true" }, "⚙"),
@@ -228,7 +240,7 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
   const sectionTitle = el("h2", {}, viewTitle());
   const refreshTaskList = () => {
     if (taskView === "projects") {
-      const board = projectsBoard(data, opts, taskSearch, taskFilter);
+      const board = renderProjectsBoard(data, opts, taskSearch, taskFilter, showArchivedProjects, () => { showArchivedProjects = !showArchivedProjects; window.__dailyflow.rerender(); }, taskItem);
       countBadge.textContent = String(board.count);
       listEl.replaceChildren(board.element);
       return;
@@ -240,7 +252,7 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
         .filter((task) => !query || [task.title, task.notes, task.date, ...task.tags].some((value) => value.toLocaleLowerCase().includes(query)))
         .sort((a, b) => taskQuadrant(a).localeCompare(taskQuadrant(b)) || (a.date || "9999").localeCompare(b.date || "9999") || a.id.localeCompare(b.id));
       countBadge.textContent = String(matches.length);
-      listEl.replaceChildren(matrixBoard(matches, opts));
+      listEl.replaceChildren(renderMatrixBoard(matches, opts, taskItem));
       return;
     }
     if (taskView === "day" && taskFilter === "all" && !taskSearch.trim()) {
@@ -326,8 +338,8 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
   const statusbar = el(
     "footer",
     { class: "statusbar" },
-    el("span", { class: "status-indicator", "aria-hidden": "true" }),
-    el("span", { class: "status-label" }, "已同步"),
+    el("span", { class: `status-indicator${opts.syncStatus.state === "retrying" ? " retrying" : ""}`, "aria-hidden": "true" }),
+    el("span", { class: "status-label", role: "status", title: opts.syncStatus.message || "" }, opts.syncStatus.state === "retrying" ? `同步失败，正在重试（第 ${opts.syncStatus.attempt} 次）` : "已同步"),
     el("span", { class: "mono" }, "%APPDATA%\\com.dailyflow.app\\data.json"),
     el("div", { class: "spacer" }),
     el("span", { class: "status-count" }, `共 ${data.tasks.length} 项 · 便签 ${data.notes.length} 张`),
@@ -338,600 +350,4 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
     searchInput.focus();
     if (searchCaret !== null) searchInput.setSelectionRange(searchCaret, searchCaret);
   }
-}
-
-function projectsBoard(data: Data, opts: RenderOpts, search: string, filter: TaskFilter = "all"): { element: HTMLElement; count: number } {
-  const board = el("div", { class: "projects-board" });
-  const query = search.trim().toLocaleLowerCase();
-  let visibleCount = 0;
-  const createButton = el("button", { class: "mini-btn project-create-button", type: "button" },
-    el("span", { class: "project-create-glyph", "aria-hidden": "true" }, "+"),
-    el("span", {}, "新建项目"),
-  );
-  const archivedButton = el("button", { class: "mini-btn", type: "button" }, showArchivedProjects ? "隐藏归档" : "显示归档");
-  const projectName = el("input", { type: "text", placeholder: "项目名称", "aria-label": "项目名称" });
-  const projectDescription = el("input", { type: "text", placeholder: "目标或说明（可选）", "aria-label": "项目说明" });
-  const createForm = el("form", { class: "project-create-form", hidden: "" },
-    projectName,
-    projectDescription,
-    el("button", { type: "submit", class: "project-create-submit" }, "创建"),
-    el("button", { type: "button", class: "project-create-cancel" }, "取消"),
-  );
-  createButton.addEventListener("click", () => {
-    createForm.hidden = !createForm.hidden;
-    if (!createForm.hidden) projectName.focus();
-  });
-  archivedButton.addEventListener("click", () => {
-    showArchivedProjects = !showArchivedProjects;
-    window.__dailyflow.rerender();
-  });
-  createForm.querySelector<HTMLButtonElement>(".project-create-cancel")!.addEventListener("click", () => {
-    createForm.hidden = true;
-    projectName.value = "";
-    projectDescription.value = "";
-  });
-  createForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const name = projectName.value.trim();
-    if (!name) {
-      projectName.focus();
-      return;
-    }
-    const args = ["project", "add", name];
-    if (projectDescription.value.trim()) args.push("--description", projectDescription.value.trim());
-    const result = await opts.onCall(args);
-    if (!result.ok) return;
-    projectName.value = "";
-    projectDescription.value = "";
-    createForm.hidden = true;
-  });
-  board.append(
-    el("div", { class: "projects-toolbar" }, createButton, archivedButton),
-    createForm,
-  );
-
-  const projects = data.projects
-    .filter((project) => showArchivedProjects || !project.archived)
-    .slice()
-    .sort((left, right) => Number(left.archived) - Number(right.archived) || left.name.localeCompare(right.name));
-  const tasksByProject = new Map<string, Task[]>();
-  for (const task of data.tasks) {
-    if (!task.project_id) continue;
-    const tasks = tasksByProject.get(task.project_id) || [];
-    tasks.push(task);
-    tasksByProject.set(task.project_id, tasks);
-  }
-  const allProjectTasks = data.tasks;
-  const summaryOpen = allProjectTasks.filter((task) => !task.done).length;
-  const summaryDone = allProjectTasks.length - summaryOpen;
-  const summaryProjects = projects.filter((project) => !project.archived).length;
-  board.append(
-    el("div", { class: "project-summary" },
-      el("div", { class: "project-summary-lead" },
-        el("span", { class: "project-summary-kicker" }, "PROJECT CONTROL"),
-        el("strong", {}, "把任务推进到结果"),
-      ),
-      el("div", { class: "project-summary-stats" },
-        el("div", { class: "project-summary-stat" }, el("strong", {}, String(summaryProjects)), el("span", {}, "个项目")),
-        el("div", { class: "project-summary-stat" }, el("strong", {}, String(summaryOpen)), el("span", {}, "项进行中")),
-        el("div", { class: "project-summary-stat" }, el("strong", {}, String(summaryDone)), el("span", {}, "项已完成")),
-      ),
-    ),
-  );
-  for (const [projectIndex, project] of projects.entries()) {
-    const projectTasks = tasksByProject.get(project.id) || [];
-    const tasks = projectTasks.filter((task) => filter === "all" || (filter === "open" ? !task.done : task.done));
-    const taskIds = new Set(tasks.map((task) => task.id));
-    const projectMatches = query.length > 0
-      && [project.name, project.description].some((value) => value.toLocaleLowerCase().includes(query));
-    const visibleIds = projectMatches ? taskIds : matchingTreeTaskIds(tasks, query);
-    if (query && !projectMatches && !visibleIds.size) continue;
-    const visibleTasks = tasks.filter((task) => visibleIds.has(task.id));
-    const roots = visibleTasks
-      .filter((task) => !task.parent_id || !visibleIds.has(task.parent_id))
-      .sort(taskOrder);
-    const childrenByParent = taskChildren(visibleTasks);
-    const openCount = projectTasks.filter((task) => !task.done).length;
-    const completedCount = projectTasks.length - openCount;
-    const completion = projectTasks.length ? Math.round((completedCount / projectTasks.length) * 100) : 0;
-    visibleCount += visibleTasks.length;
-    const list = el("div", { class: "project-task-tree" });
-    if (roots.length) {
-      for (const task of roots) list.append(taskItem(task, opts, true, childrenByParent));
-    } else if (visibleTasks.length) {
-      list.append(el("div", { class: "project-empty" }, "任务关系有循环，无法显示此树"));
-    } else {
-      list.append(el("div", { class: "project-empty" }, "项目还没有任务"));
-    }
-    const editName = el("input", { type: "text", value: project.name, "aria-label": "项目名称" });
-    const editDescription = el("input", { type: "text", value: project.description, "aria-label": "项目说明", placeholder: "目标或说明（可选）" });
-    const editForm = el("form", { class: "project-edit-form", hidden: "" },
-      editName,
-      editDescription,
-      el("button", { type: "submit", class: "project-edit-submit" }, "保存"),
-      el("button", { type: "button", class: "project-edit-cancel" }, "取消"),
-    );
-    const editButton = el("button", {
-      class: "mini-btn",
-      type: "button",
-      onclick: () => {
-        editForm.hidden = !editForm.hidden;
-        if (!editForm.hidden) editName.focus();
-      },
-    }, "编辑");
-    editForm.querySelector<HTMLButtonElement>(".project-edit-cancel")!.addEventListener("click", () => {
-      editForm.hidden = true;
-      editName.value = project.name;
-      editDescription.value = project.description;
-    });
-    editForm.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const name = editName.value.trim();
-      if (!name) {
-        editName.focus();
-        return;
-      }
-      const result = await opts.onCall([
-        "project", "edit", project.id,
-        "--name", name,
-        "--description", editDescription.value.trim(),
-      ]);
-      if (result.ok) editForm.hidden = true;
-    });
-    const archive = el("button", {
-      class: "mini-btn project-archive",
-      type: "button",
-      onclick: async () => {
-        await opts.onCall(["project", project.archived ? "unarchive" : "archive", project.id]);
-      },
-    }, project.archived ? "恢复" : "归档");
-    const collapseButton = el("button", {
-      class: "project-collapse",
-      type: "button",
-      "aria-expanded": "true",
-      "aria-label": `折叠项目 ${project.name}`,
-      title: "折叠任务树",
-    }, "⌄");
-    collapseButton.addEventListener("click", () => {
-      const expanded = !list.hidden;
-      list.hidden = expanded;
-      collapseButton.textContent = expanded ? "›" : "⌄";
-      collapseButton.setAttribute("aria-expanded", String(!expanded));
-      collapseButton.title = expanded ? "展开任务树" : "折叠任务树";
-    });
-    const projectSection = el(
-      "section",
-      { class: `project-section${project.archived ? " is-archived" : ""}` },
-        el("div", { class: "project-section-head" },
-          el("div", { class: "project-index" }, String(projectIndex + 1).padStart(2, "0")),
-          el("div", { class: "project-heading" },
-            el("h3", {}, project.name),
-            el("span", { class: "project-task-count" }, `${openCount} 未完成 · ${completedCount} 已完成`),
-          ),
-          el("div", { class: "project-actions" }, editButton, archive, collapseButton),
-        ),
-        project.description ? el("p", { class: "project-description" }, project.description) : null,
-        el("div", { class: "project-progress-row" },
-          el("div", { class: "project-progress-track" }, el("i", { style: `width:${completion}%` })),
-          el("span", { class: "project-progress-value" }, `${completion}%`),
-        ),
-        editForm,
-        el("div", { class: "project-tree-surface" }, list),
-    );
-    board.append(projectSection);
-  }
-
-  const unassigned = data.tasks.filter((task) => !task.project_id && (filter === "all" || (filter === "open" ? !task.done : task.done)));
-  const visibleUnassignedIds = matchingTreeTaskIds(unassigned, query);
-  const visibleUnassigned = unassigned.filter((task) => visibleUnassignedIds.has(task.id));
-  if (visibleUnassigned.length) {
-    const visibleIds = new Set(visibleUnassigned.map((task) => task.id));
-    const roots = visibleUnassigned
-      .filter((task) => !task.parent_id || !visibleIds.has(task.parent_id))
-      .sort(taskOrder);
-    const childrenByParent = taskChildren(visibleUnassigned);
-    visibleCount += visibleUnassigned.length;
-    const section = el("section", { class: "project-section project-unassigned" },
-      el("div", { class: "project-section-head" },
-        el("div", { class: "project-index" }, "--"),
-        el("div", { class: "project-heading" },
-          el("h3", {}, "未归属项目"),
-          el("span", { class: "project-task-count" }, `${visibleUnassigned.filter((task) => !task.done).length} 未完成`),
-        ),
-      ),
-      el("p", { class: "project-description" }, "先归入项目，任务会更容易形成可推进的路径。"),
-    );
-    const unassignedTree = el("div", { class: "project-tree-surface" });
-    if (roots.length) {
-      unassignedTree.append(...roots.map((task) => taskItem(task, opts, true, childrenByParent)));
-    } else {
-      unassignedTree.append(el("div", { class: "project-empty" }, "任务关系有循环，无法显示此树"));
-    }
-    section.append(unassignedTree);
-    board.append(section);
-  }
-
-  if (!board.querySelector(".project-section")) {
-    board.append(el("div", { class: "project-empty-state" }, query ? "没有符合条件的项目或任务" : "还没有项目或任务"));
-  }
-  return { element: board, count: visibleCount };
-}
-
-function matchingTreeTaskIds(tasks: Task[], query: string): Set<string> {
-  if (!query) return new Set(tasks.map((task) => task.id));
-  const byId = new Map(tasks.map((task) => [task.id, task]));
-  const visible = new Set<string>();
-  for (const task of tasks) {
-    const fields = [task.title, task.notes, task.date, ...task.tags];
-    if (!fields.some((value) => value.toLocaleLowerCase().includes(query))) continue;
-    let current: Task | undefined = task;
-    const seen = new Set<string>();
-    while (current && !seen.has(current.id)) {
-      visible.add(current.id);
-      seen.add(current.id);
-      current = current.parent_id ? byId.get(current.parent_id) : undefined;
-    }
-  }
-  return visible;
-}
-
-function taskChildren(tasks: Task[]): Map<string, Task[]> {
-  const children = new Map<string, Task[]>();
-  for (const task of tasks) {
-    if (!task.parent_id) continue;
-    const siblings = children.get(task.parent_id) || [];
-    siblings.push(task);
-    children.set(task.parent_id, siblings);
-  }
-  for (const siblings of children.values()) siblings.sort(taskOrder);
-  return children;
-}
-
-function taskOrder(left: Task, right: Task): number {
-  return (left.date || "9999").localeCompare(right.date || "9999")
-    || (left.start || "99:99").localeCompare(right.start || "99:99")
-    || left.title.localeCompare(right.title)
-    || left.id.localeCompare(right.id);
-}
-
-/** 概览卡：今天 / 逾期 / 长期 三张数字卡 */
-function statCards(data: Data, today: string): HTMLElement {
-  const todayAll = data.tasks.filter((t) => t.date === today && t.kind !== "goal");
-  const todayOpen = todayAll.filter((t) => !t.done).length;
-  const overdueN = data.tasks.filter((t) => !t.done && t.kind !== "goal" && t.date !== "" && t.date < today).length;
-  const goalsN = data.tasks.filter((t) => t.kind === "goal" && !t.done).length;
-  const deadlinesN = data.tasks.filter((t) => t.kind === "deadline" && !t.done && t.date !== "" && t.date >= today).length;
-  const card = (label: string, value: string, cls: string, index: string) =>
-    el("div", { class: `stat-card ${cls}` },
-      el("div", { class: "stat-topline" },
-        el("span", { class: "stat-index" }, index),
-        el("span", { class: "stat-value" }, value),
-      ),
-      el("div", { class: "stat-label" }, label),
-    );
-  const cards: Array<[string, string, string]> = [
-    ["今日待办", String(todayOpen), todayOpen > 0 ? "hot" : "calm"],
-    ...(overdueN > 0 ? [["已逾期", String(overdueN), "danger"] as [string, string, string]] : []),
-    ...(deadlinesN > 0 ? [["临近截止", String(deadlinesN), "warn"] as [string, string, string]] : []),
-    ["长期目标", String(goalsN), "goal"],
-  ];
-  return el(
-    "div",
-    { class: "stat-cards" },
-    ...cards.map(([label, value, cls], index) => card(label, value, cls, String(index + 1).padStart(2, "0"))),
-  );
-}
-
-function dayProgress(data: Data, date: string): number {
-  const ts = data.tasks.filter((t) => t.date === date && t.kind !== "goal");
-  if (!ts.length) return 0;
-  return ts.filter((t) => t.done).length / ts.length;
-}
-
-function buildRing(p: number, allDone: boolean): HTMLElement {
-  const r = 21;
-  const c = 2 * Math.PI * r;
-  const wrap = el("div", { class: "progress-ring", title: allDone ? "全部完成 🎉" : "完成率" });
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("width", "52");
-  svg.setAttribute("height", "52");
-  const bg = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-  const fg = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-  for (const [circle, cls] of [[bg, "ring-bg"], [fg, "ring-fg"]] as const) {
-    circle.setAttribute("cx", "26");
-    circle.setAttribute("cy", "26");
-    circle.setAttribute("r", String(r));
-    circle.setAttribute("fill", "none");
-    circle.setAttribute("stroke-width", "4");
-    circle.setAttribute("class", cls);
-  }
-  if (allDone) {
-    fg.classList.add("done-all");
-  }
-  fg.setAttribute("stroke-dasharray", String(c));
-  fg.setAttribute("stroke-dashoffset", String(c * (1 - p)));
-  fg.setAttribute("stroke-linecap", "round");
-  svg.append(bg, fg);
-  const label = el("div", { class: `ring-label${allDone ? " done-all" : ""}` }, allDone ? "✓" : `${Math.round(p * 100)}%`);
-  wrap.append(svg, label);
-  return wrap;
-}
-
-function daysUntil(date: string): number {
-  if (!date) return Infinity;
-  const d = new Date(date + "T00:00:00");
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  return Math.round((d.getTime() - now.getTime()) / 86400000);
-}
-
-function matrixBoard(tasks: Task[], opts: RenderOpts): HTMLElement {
-  const groups: Quadrant[] = ["q1", "q2", "q3", "q4"];
-  const board = el("div", { class: "quadrant-board" });
-  for (const quadrant of groups) {
-    const items = tasks.filter((task) => taskQuadrant(task) === quadrant);
-    const meta = QUADRANT_META[quadrant];
-    const cell = el(
-      "section",
-      { class: `quadrant-cell quadrant-${quadrant}` },
-      el("div", { class: "quadrant-head" },
-        el("div", { class: "quadrant-code" }, meta.short),
-        el("div", { class: "quadrant-heading" },
-          el("strong", {}, meta.label),
-          el("span", { class: "quadrant-count" }, String(items.length)),
-        ),
-      ),
-      el("div", { class: "quadrant-hint" }, quadrant === "q1" ? "先处理，避免继续积压" : quadrant === "q2" ? "留出时间，安排进计划" : quadrant === "q3" ? "尽量委派或快速处理" : "减少、合并或稍后再做"),
-      el("div", { class: "quadrant-items" },
-        ...(items.length
-          ? items.map((task) => taskItem(task, opts, true))
-          : [el("div", { class: "quadrant-empty" }, "暂无任务")]),
-      ),
-    );
-    board.append(cell);
-  }
-  return board;
-}
-
-function taskItem(
-  t: Task,
-  opts: RenderOpts,
-  showDate = false,
-  treeChildren?: Map<string, Task[]>,
-  ancestors: ReadonlySet<string> = new Set(),
-): HTMLElement {
-  const today = fmtDate(new Date());
-  const overdue = !t.done && t.date !== "" && t.date < today && t.kind !== "goal";
-  const children = treeChildren?.get(t.id) || [];
-  const meta: (Node | string | null)[] = [];
-  const quadrant = taskQuadrant(t);
-  meta.push(el("span", { class: `quadrant-chip quadrant-chip-${quadrant}` }, QUADRANT_META[quadrant].short));
-  if (t.project_id && !treeChildren) {
-    const project = opts.data.projects.find((item) => item.id === t.project_id);
-    if (project) meta.push(el("span", { class: "project-chip" }, project.name));
-  }
-  if (t.parent_id && !treeChildren) {
-    const parent = opts.data.tasks.find((item) => item.id === t.parent_id);
-    if (parent) meta.push(el("span", { class: "task-parent-chip" }, `↳ ${parent.title}`));
-  }
-  if (showDate) meta.push(el("span", { class: "date-chip" }, t.date || "无目标日"));
-  if (t.start) meta.push(el("span", { class: "time-chip" }, `◷ ${t.start}${t.end ? "–" + t.end : ""}`));
-  if (t.remind_at) meta.push(el("span", { class: "remind-chip" }, `提醒 ${t.remind_at}`));
-  if (t.repeat && t.repeat !== "none") {
-    const labels = { daily: "每天", weekly: "每周", monthly: "每月" };
-    meta.push(el("span", { class: "repeat-chip" }, labels[t.repeat]));
-  }
-  if (overdue) meta.push(el("span", { class: "overdue" }, "已逾期"));
-  if (t.kind === "deadline" && t.date) {
-    const n = daysUntil(t.date);
-    const label = n === 0 ? "今天截止" : n === 1 ? "明天截止" : `剩 ${n} 天`;
-    meta.push(el("span", { class: n <= 1 ? "overdue" : "kind-chip" }, `↘ ${label}`));
-  }
-  if (t.kind === "goal") {
-    if (t.date) meta.push(el("span", { class: "kind-chip goal-chip" }, `◎ 目标日 ${t.date.slice(5)}`));
-    else meta.push(el("span", { class: "kind-chip goal-chip" }, "◎ 长期"));
-  }
-  if (treeChildren && children.length) {
-    const doneChildren = children.filter((child) => child.done).length;
-    meta.push(el("span", { class: "subtask-chip" }, `子任务 ${doneChildren}/${children.length}`));
-  }
-  meta.push(...t.tags.map((tag) => el("span", { class: "tag-chip" }, tag)));
-
-  const titleEl = el("div", { class: "task-title" }, t.title);
-  const project = t.project_id ? opts.data.projects.find((item) => item.id === t.project_id) : undefined;
-  let childTitle: HTMLInputElement | undefined;
-  let childForm: HTMLFormElement | undefined;
-  if (treeChildren && t.repeat === "none" && !project?.archived && !ancestors.has(t.id)) {
-    childTitle = el("input", {
-      type: "text",
-      placeholder: "子任务名称",
-      "aria-label": `为 ${t.title} 添加子任务`,
-    });
-    childForm = el("form", { class: "task-child-form", hidden: "" },
-      childTitle,
-      el("button", { type: "submit", class: "task-child-submit" }, "添加"),
-      el("button", { type: "button", class: "task-child-cancel" }, "取消"),
-    );
-    childForm.querySelector<HTMLButtonElement>(".task-child-cancel")!.addEventListener("click", () => {
-      childForm!.hidden = true;
-      childTitle!.value = "";
-    });
-    childForm.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const title = childTitle!.value.trim();
-      if (!title) {
-        childTitle!.focus();
-        return;
-      }
-      const args = ["task", "add", title, "--parent", t.id];
-      if (t.date) args.push("--date", t.date);
-      const result = await opts.onCall(args);
-      if (result.ok) {
-        childTitle!.value = "";
-        childForm!.hidden = true;
-      }
-    });
-  }
-  const addChild = childForm
-    ? el("button", {
-        class: "task-child-add",
-        type: "button",
-        title: "添加子任务",
-        "aria-label": `为 ${t.title} 添加子任务`,
-        onclick: () => {
-          childForm!.hidden = !childForm!.hidden;
-          if (!childForm!.hidden) childTitle!.focus();
-        },
-      }, "+")
-    : null;
-  const item = el(
-    "div",
-    { class: `task-item pri-${t.priority}${t.done ? " done" : ""}` },
-    el("button", {
-      class: "task-check",
-      title: t.done ? "标记未完成" : "完成",
-      onclick: async () => {
-        await opts.onCall(taskToggleArgs(t.id));
-        window.__dailyflow.rerender();
-      },
-    }, t.done ? "✓" : ""),
-    el("div", { class: "task-body" },
-      titleEl,
-      el("div", { class: "task-meta" }, ...meta),
-      t.notes ? el("div", { class: "task-meta" }, t.notes) : null,
-    ),
-    el("button", {
-      class: "task-edit",
-      title: "编辑任务",
-      "aria-label": `编辑 ${t.title}`,
-      "data-focus-key": `task-edit-${t.id}`,
-      onclick: () => openTaskEditor(t, opts),
-    }, "编辑"),
-    addChild,
-    el("button", {
-      class: "task-del",
-      title: "删除",
-      onclick: async () => {
-        const res = await opts.onCall(taskDeleteArgs(t.id));
-        if (res.ok) {
-          window.__dailyflow.rerender();
-          window.__dailyflow.undoToast("已删除任务", async () => {
-            const restored = await opts.onCall(undoArgs(t.id));
-            if (restored.ok) window.__dailyflow.rerender();
-          });
-        }
-      },
-    }, "✕"),
-  );
-  if (t.kind === "goal") item.classList.add("is-goal");
-  if (t.kind === "deadline") item.classList.add("is-deadline");
-  item.classList.add(`quadrant-${quadrant}`);
-
-  // 双击标题 → 行内编辑（标题 + 时间），Enter 保存 / Esc 取消
-  titleEl.addEventListener("dblclick", () => beginInlineEdit(titleEl, t, opts));
-  titleEl.title = "双击编辑";
-
-  if (!treeChildren) return item;
-  if (ancestors.has(t.id)) return item;
-  const nextAncestors = new Set(ancestors);
-  nextAncestors.add(t.id);
-  const node = el("div", { class: `task-tree-node${children.length ? " has-children" : ""}` }, item);
-  if (childForm) node.append(childForm);
-  for (const child of children) {
-    node.append(taskItem(child, opts, true, treeChildren, nextAncestors));
-  }
-  return node;
-}
-
-/** 双击行内编辑：标题输入框替换标题文本，可选时间输入框 */
-function beginInlineEdit(titleEl: HTMLElement, t: Task, opts: RenderOpts): void {
-  if (titleEl.querySelector("input")) return; // 已在编辑
-  const old = t.title;
-  const input = document.createElement("input");
-  input.className = "task-inline-input";
-  input.value = old;
-  titleEl.replaceWith(input);
-  input.focus();
-  input.setSelectionRange(input.value.length, input.value.length);
-
-  let done = false;
-  const finish = async (save: boolean) => {
-    if (done) return;
-    done = true;
-    const val = input.value.trim();
-    if (save && val && val !== old) {
-      await opts.onCall(taskEditArgs(t.id, [["title", old, val]]));
-    }
-    window.__dailyflow.rerender();
-  };
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && (e.isComposing || e.keyCode === 229)) return;
-    if (e.key === "Enter") void finish(true);
-    else if (e.key === "Escape") void finish(false);
-    e.stopPropagation();
-  });
-  input.addEventListener("blur", () => void finish(true));
-}
-
-function weekCal(data: Data, selected: string, today: string, opts: RenderOpts): HTMLElement {
-  const base = new Date(selected + "T00:00:00");
-  const monday = new Date(base);
-  monday.setDate(base.getDate() - ((base.getDay() + 6) % 7));
-  const grid = el("div", { class: "week-grid" });
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
-    const ds = fmtDate(d);
-    const dayTasks = data.tasks.filter((t) => t.date === ds);
-    const cell = el(
-      "button",
-      {
-        class: `week-day${ds === selected ? " selected" : ""}${ds === today ? " today" : ""}`,
-        type: "button",
-        "aria-pressed": String(ds === selected),
-        "aria-label": `${ds}，${dayTasks.length} 项任务${ds === selected ? "，当前日期" : ""}`,
-        onclick: () => opts.onSelectDate(ds),
-      },
-      el("span", { class: "wd" }, WD[d.getDay()].slice(1)),
-      el("span", { class: "dn" }, String(d.getDate())),
-      el("span", { class: "dots" },
-        ...dayTasks.filter((t) => !t.done).slice(0, 4).map(() => el("span", { class: "dot" })),
-        ...dayTasks.filter((t) => t.done).slice(0, 2).map(() => el("span", { class: "dot done-dot" })),
-      ),
-    );
-    grid.append(cell);
-  }
-  // 选中日的月分标题（跨月导航时给用户方位感）
-  const selMonth = `${base.getFullYear() % 100}年${base.getMonth() + 1}月`;
-  return el(
-    "div",
-    { class: "week-cal" },
-    el("div", { class: "week-cal-head" },
-      el("div", { class: "panel-heading" },
-        el("div", { class: "panel-eyebrow" }, "WEEK VIEW"),
-        el("h3", {}, selMonth),
-      ),
-      el("button", {
-        class: "week-nav",
-        "aria-label": "上一周",
-        title: "上一周（含更早日期）",
-        onclick: () => {
-          const d = new Date(selected + "T00:00:00");
-          d.setDate(d.getDate() - 7);
-          opts.onSelectDate(fmtDate(d));
-        },
-      }, "‹"),
-      el("button", {
-        class: "week-nav",
-        "aria-label": "下一周",
-        title: "下一周",
-        onclick: () => {
-          const d = new Date(selected + "T00:00:00");
-          d.setDate(d.getDate() + 7);
-          opts.onSelectDate(fmtDate(d));
-        },
-      }, "›"),
-    ),
-    grid,
-  );
 }

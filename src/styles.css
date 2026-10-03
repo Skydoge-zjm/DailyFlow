@@ -1939,3 +1939,74 @@ body[data-view="widget"] .widget-toast button:hover { background: var(--accent-s
   background: var(--bg-soft);
   color: var(--text);
 }
+
+/* 外部 CLI/文件同步失败时的可见重试状态 */
+#app.modern-app .status-indicator.retrying {
+  background: var(--red);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--red) 18%, transparent);
+}
+#app.modern-app .status-label[role="status"] { color: var(--red); }
+
+/* 首次启动引导 */
+.onboarding-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(5, 8, 12, .66);
+  backdrop-filter: blur(8px);
+}
+.onboarding-panel {
+  width: min(560px, 100%);
+  padding: 30px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--card);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, .36);
+}
+.onboarding-mark {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  margin-bottom: 18px;
+  border-radius: 12px;
+  background: var(--accent);
+  color: #111820;
+  font-weight: 800;
+  letter-spacing: -.08em;
+}
+.onboarding-title { margin: 8px 0 10px; font-size: clamp(25px, 5vw, 36px); letter-spacing: -.04em; }
+.onboarding-lead { margin: 0 0 22px; color: var(--text-dim); line-height: 1.65; }
+.onboarding-section-title { margin: 0 0 10px; font-size: 13px; }
+.onboarding-policy-options { display: grid; gap: 8px; }
+.onboarding-policy {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 12px 13px;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color .16s ease, background .16s ease;
+}
+.onboarding-policy:hover, .onboarding-policy.selected { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.onboarding-policy input { margin-top: 3px; accent-color: var(--accent); }
+.onboarding-policy-copy { display: grid; gap: 3px; }
+.onboarding-policy-copy strong { font-size: 13px; }
+.onboarding-policy-copy small { color: var(--text-dim); line-height: 1.45; }
+.onboarding-shortcuts { display: grid; gap: 4px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border-soft); color: var(--text-dim); font-size: 11px; line-height: 1.5; }
+.onboarding-actions { display: flex; justify-content: flex-end; margin-top: 22px; }
+.onboarding-complete { min-width: 120px; }
+
+/* 导出面板 */
+.export-panel { width: min(520px, calc(100vw - 32px)); }
+.export-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.export-description { margin: 10px 0 20px; color: var(--text-dim); line-height: 1.6; font-size: 12px; }
+.export-field { display: grid; gap: 7px; color: var(--text-faint); font-size: 11px; font-weight: 600; }
+.export-format-select, .cli-path-policy-select { min-height: 38px; padding: 0 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg-soft); color: var(--text); }
+.export-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
+.cli-path-policy-row { align-items: center; justify-content: space-between; gap: 12px; }
+.cli-path-policy-label { color: var(--text-dim); }

@@ -127,6 +127,20 @@ pub enum Theme {
     Auto,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum WidgetPolicy {
+    Always,
+    #[default]
+    LastState,
+    Manual,
+}
+
+fn default_onboarding_completed() -> bool {
+    // Existing v3 data predates onboarding; do not interrupt existing users.
+    true
+}
+
 /// 内置主题 preset 名（frontend 把名字映射为 CSS 变量集合）
 pub const THEME_PRESETS: [&str; 5] = [
     "classic-dark",    // 原版深色（main 分支默认）
@@ -318,6 +332,12 @@ pub struct Settings {
     pub widget_visible: bool,
     #[serde(default = "default_true")]
     pub widget_pinned: bool,
+    /// 悬浮窗启动策略：always / last_state / manual。
+    #[serde(default)]
+    pub widget_policy: WidgetPolicy,
+    /// 新安装用户是否已经完成首次启动引导。
+    #[serde(default = "default_onboarding_completed")]
+    pub onboarding_completed: bool,
     #[serde(default)]
     pub widget_x: i32,
     #[serde(default)]
@@ -350,8 +370,10 @@ impl Default for Settings {
             theme_overrides: std::collections::BTreeMap::new(),
             sticky_opacity: default_sticky_opacity(),
             autostart: false,
-            widget_visible: true,
+            widget_visible: false,
             widget_pinned: true,
+            widget_policy: WidgetPolicy::LastState,
+            onboarding_completed: false,
             widget_x: 0,
             widget_y: 0,
             widget_w: default_widget_w(),
