@@ -121,9 +121,8 @@ export function taskItem(
       title: t.done ? "标记未完成" : "完成",
       onclick: async () => {
         await opts.onCall(taskToggleArgs(t.id));
-        window.__dailyflow.rerender();
       },
-    }, t.done ? "✓" : ""),
+    }, t.done ? el("span", { class: "task-checkmark", "aria-hidden": "true" }) : null),
     el("div", { class: "task-body" },
       titleEl,
       el("div", { class: "task-meta" }, ...meta),
@@ -143,10 +142,8 @@ export function taskItem(
       onclick: async () => {
         const res = await opts.onCall(taskDeleteArgs(t.id));
         if (res.ok) {
-          window.__dailyflow.rerender();
-          window.__dailyflow.undoToast("已删除任务", async () => {
-            const restored = await opts.onCall(undoArgs(t.id));
-            if (restored.ok) window.__dailyflow.rerender();
+            window.__dailyflow.undoToast("已删除任务", async () => {
+            await opts.onCall(undoArgs(t.id));
           });
         }
       },

@@ -34,32 +34,32 @@ export function dayProgress(data: Data, date: string): number {
   return ts.filter((t) => t.done).length / ts.length;
 }
 
-export function buildRing(p: number, allDone: boolean): HTMLElement {
-  const r = 21;
-  const c = 2 * Math.PI * r;
-  const wrap = el("div", { class: "progress-ring", title: allDone ? "全部完成 🎉" : "完成率" });
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("width", "52");
-  svg.setAttribute("height", "52");
-  const bg = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-  const fg = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-  for (const [circle, cls] of [[bg, "ring-bg"], [fg, "ring-fg"]] as const) {
-    circle.setAttribute("cx", "26");
-    circle.setAttribute("cy", "26");
-    circle.setAttribute("r", String(r));
-    circle.setAttribute("fill", "none");
-    circle.setAttribute("stroke-width", "4");
-    circle.setAttribute("class", cls);
-  }
-  if (allDone) {
-    fg.classList.add("done-all");
-  }
-  fg.setAttribute("stroke-dasharray", String(c));
-  fg.setAttribute("stroke-dashoffset", String(c * (1 - p)));
-  fg.setAttribute("stroke-linecap", "round");
-  svg.append(bg, fg);
-  const label = el("div", { class: `ring-label${allDone ? " done-all" : ""}` }, allDone ? "✓" : `${Math.round(p * 100)}%`);
-  wrap.append(svg, label);
-  return wrap;
+export function buildProgressMeter(progress: number, done: number, total: number): HTMLElement {
+  const percentage = Math.round(Math.max(0, Math.min(1, progress)) * 100);
+  const complete = total > 0 && done >= total;
+  const meter = el("div", {
+    class: `progress-meter${complete ? " complete" : ""}`,
+    title: complete ? "今日安排已完成" : `今日完成 ${percentage}%`,
+    role: "progressbar",
+    "aria-valuemin": "0",
+    "aria-valuemax": "100",
+    "aria-valuenow": String(percentage),
+    "aria-label": `今日进度 ${done} / ${total || 0} 项完成`,
+  });
+  const fill = el("span", {
+    class: "progress-meter-fill",
+    style: `width:${percentage}%`,
+  });
+  meter.append(
+    el("div", { class: "progress-meter-head" },
+      el("span", { class: "progress-meter-label" }, "今日进度"),
+      el("strong", { class: "progress-meter-value" }, `${done} / ${total || 0}`),
+    ),
+    el("div", { class: "progress-meter-track" }, fill),
+    el("div", { class: "progress-meter-foot" },
+      el("span", {}, complete ? "全部完成" : ""),
+      el("span", {}, `${percentage}%`),
+    ),
+  );
+  return meter;
 }
-

@@ -11,6 +11,7 @@ import type { RenderOpts } from "./ui.ts";
 import { applyTheme, sanitizeThemeOverrides } from "./themes.ts";
 import type { CommandResult, Data, Note, Settings, SyncStatus, Task } from "./types.ts";
 import { closeOnboarding, openOnboarding } from "./onboarding.ts";
+import { enhanceCustomSelects, observeCustomSelects } from "./custom-select.ts";
 
 export {};
 
@@ -21,7 +22,7 @@ declare global {
       selected: string;
       saveSettings: (patch: Partial<Settings>) => Promise<boolean>;
       call: (args: string[]) => Promise<CommandResult>;
-      rerender: () => void;
+      rerender: (preserveChrome?: boolean) => void;
       toast: (msg: string, isErr?: boolean) => void;
       undoToast: (msg: string, onUndo: () => Promise<void>) => void;
       syncStatus: SyncStatus;
@@ -127,8 +128,7 @@ async function call(args: string[]): Promise<CommandResult> {
 }
 
 async function createNote(): Promise<void> {
-  const res = await call(["note", "add", "（在这里写下内容）"]);
-  if (res.ok) await reload();
+  await call(["note", "add", "（在这里写下内容）"]);
 }
 
 async function reload(): Promise<void> {
@@ -163,7 +163,7 @@ async function persistSettings(patch: Partial<Settings>): Promise<boolean> {
     ? { ...patch, theme_overrides: next.theme_overrides }
     : patch;
   try {
-    await invoke("fe_save_settings", { patch: safePatch });
+    if (!previewMode) await invoke("fe_save_settings", { patch: safePatch });
     data.settings = next;
     render();
     return true;
@@ -175,7 +175,7 @@ async function persistSettings(patch: Partial<Settings>): Promise<boolean> {
   }
 }
 
-function render(): void {
+function render(preserveChrome = false): void {
   const active = document.activeElement;
   let restoreFocus: { key: string; selection?: [number, number] } | undefined;
   if (active instanceof HTMLElement && appEl.contains(active) && active.dataset.focusKey) {
@@ -210,7 +210,8 @@ function render(): void {
     onNewNote: createNote,
   };
   currentRenderOpts = opts;
-  renderApp(appEl, opts);
+  renderApp(appEl, opts, preserveChrome);
+  enhanceCustomSelects(appEl);
   if (!previewMode && !data.settings.onboarding_completed) openOnboarding();
   else closeOnboarding();
   if (restoreFocus) {
@@ -274,6 +275,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   }
 
   window.addEventListener("keydown", handleAppShortcut);
+  observeCustomSelects();
   window.__dailyflow = {
     get data() {
       return data;
@@ -281,7 +283,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     selected: selectedDate,
     saveSettings: persistSettings,
     call,
-    rerender: render,
+    rerender: (preserveChrome = false) => render(preserveChrome),
     toast,
     undoToast,
     get syncStatus() { return syncStatus; },

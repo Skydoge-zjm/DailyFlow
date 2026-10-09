@@ -128,10 +128,11 @@ pub enum Theme {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum WidgetPolicy {
     Always,
     #[default]
+    #[serde(alias = "laststate", alias = "last-state")]
     LastState,
     Manual,
 }
@@ -665,7 +666,7 @@ pub fn default_widget_position() -> (i32, i32) {
 
 #[cfg(test)]
 mod theme_validation_tests {
-    use super::validate_theme_overrides;
+    use super::{validate_theme_overrides, WidgetPolicy};
     use std::collections::BTreeMap;
 
     #[test]
@@ -694,5 +695,19 @@ mod theme_validation_tests {
         assert!(validate_theme_overrides(&injection).is_err());
         let unknown = BTreeMap::from([("--background".to_string(), "#fff".to_string())]);
         assert!(validate_theme_overrides(&unknown).is_err());
+    }
+
+    #[test]
+    fn widget_policy_keeps_frontend_value_and_reads_legacy_values() {
+        assert_eq!(
+            serde_json::to_value(WidgetPolicy::LastState).unwrap(),
+            serde_json::json!("last_state")
+        );
+        for legacy in ["laststate", "last-state"] {
+            assert_eq!(
+                serde_json::from_value::<WidgetPolicy>(serde_json::json!(legacy)).unwrap(),
+                WidgetPolicy::LastState
+            );
+        }
     }
 }

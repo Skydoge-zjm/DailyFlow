@@ -19,7 +19,6 @@ export function notesPanel(data: Data, opts: RenderOpts): HTMLElement {
           const result = await opts.onCall(noteVisibilityArgs(note.id, !note.visible));
           if (!result.ok) return;
           if (note.visible) await invokeClose(note.id);
-          window.__dailyflow.rerender();
         })();
       },
     }, note.visible ? "◉" : "○");
@@ -47,10 +46,8 @@ export function notesPanel(data: Data, opts: RenderOpts): HTMLElement {
               const result = await opts.onCall(noteDeleteArgs(note.id));
               if (!result.ok) return;
               await invokeClose(note.id);
-              window.__dailyflow.rerender();
-              window.__dailyflow.undoToast("已删除便签", async () => {
-                const restored = await opts.onCall(undoArgs(note.id));
-                if (restored.ok) window.__dailyflow.rerender();
+                  window.__dailyflow.undoToast("已删除便签", async () => {
+                await opts.onCall(undoArgs(note.id));
               });
             })();
           },
@@ -63,7 +60,6 @@ export function notesPanel(data: Data, opts: RenderOpts): HTMLElement {
   }
   return el("div", { class: "quick-add notes-panel" },
     el("div", { class: "panel-heading" },
-      el("div", { class: "panel-eyebrow" }, "MEMOS"),
       el("div", { class: "panel-title-row" },
         el("h3", {}, "桌面便签"),
         el("span", { class: "panel-count" }, String(data.notes.length)),

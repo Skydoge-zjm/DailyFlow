@@ -1060,7 +1060,7 @@ body[data-view="widget"] { overflow: hidden; background: transparent; }
   color: var(--text-faint);
 }
 #app.modern-app .status-indicator { width: 6px; height: 6px; border-radius: 50%; background: var(--teal); box-shadow: 0 0 0 3px color-mix(in srgb, var(--teal) 14%, transparent); }
-#app.modern-app .status-label { color: var(--text-dim); }
+#app.modern-app .status-label { color: var(--green); }
 #app.modern-app .statusbar .mono { margin-left: 6px; font-size: 9px; color: var(--text-faint); }
 #app.modern-app .status-count { font-variant-numeric: tabular-nums; }
 #app.modern-app button:focus-visible,
@@ -1945,7 +1945,7 @@ body[data-view="widget"] .widget-toast button:hover { background: var(--accent-s
   background: var(--red);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--red) 18%, transparent);
 }
-#app.modern-app .status-label[role="status"] { color: var(--red); }
+#app.modern-app .status-label.retrying { color: var(--red); }
 
 /* 首次启动引导 */
 .onboarding-backdrop {
@@ -2010,3 +2010,768 @@ body[data-view="widget"] .widget-toast button:hover { background: var(--accent-s
 .export-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
 .cli-path-policy-row { align-items: center; justify-content: space-between; gap: 12px; }
 .cli-path-policy-label { color: var(--text-dim); }
+
+/* ============================================================
+   DailyFlow frontend redesign v2
+   Visual thesis: a quiet editorial workbench, not a dashboard mosaic.
+   ============================================================ */
+#app.modern-app {
+  --bg: #101417;
+  --bg-soft: #151b20;
+  --card: #1a2127;
+  --card-hover: #20292f;
+  --border: #2b353c;
+  --border-soft: #222b31;
+  --text: #f2efe9;
+  --text-dim: #a2aaab;
+  --text-faint: #69757a;
+  --accent: #d69a5d;
+  --accent-soft: rgba(214, 154, 93, .12);
+  --teal: #72b9ae;
+  --red: #db7770;
+  --green: #82bd8a;
+  --blue: #79a7c7;
+  --radius: 9px;
+  --radius-lg: 13px;
+  background: var(--bg);
+}
+
+#app.modern-app .topbar {
+  min-height: 72px;
+  padding: 14px 32px;
+  gap: 16px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border-soft);
+}
+#app.modern-app .brand-lockup { min-width: 148px; gap: 9px; }
+#app.modern-app .brand-mark {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  box-shadow: none;
+  font-size: 12px;
+}
+#app.modern-app .brand-name { font-size: 11px; letter-spacing: 2px; }
+#app.modern-app .brand-caption { font-size: 9px; }
+#app.modern-app .topbar-divider { height: 27px; }
+#app.modern-app .topbar .date-main { font-size: 20px; font-weight: 700; letter-spacing: -.3px; }
+#app.modern-app .topbar .date-kicker { font-size: 8px; letter-spacing: 1.5px; }
+#app.modern-app .topbar .date-sub { font-size: 10px; }
+#app.modern-app .progress-cluster { gap: 8px; padding-left: 11px; }
+#app.modern-app .progress-ring,
+#app.modern-app .progress-ring svg { width: 38px; height: 38px; }
+#app.modern-app .progress-ring svg { transform: scale(.82); transform-origin: center; }
+#app.modern-app .progress-copy .progress-label { font-size: 8px; letter-spacing: 1px; }
+#app.modern-app .progress-copy strong { font-size: 10px; }
+#app.modern-app .topbar-actions { gap: 2px; }
+#app.modern-app .topbar .action-btn {
+  min-width: 31px;
+  width: 31px;
+  height: 31px;
+  padding: 0;
+  border-radius: 8px;
+}
+#app.modern-app .topbar .action-btn .btn-label { display: none; }
+#app.modern-app .btn-glyph { width: 100%; font-size: 15px; }
+#app.modern-app .topbar .action-btn:hover { transform: none; background: var(--card); border-color: var(--border); }
+
+#app.modern-app .layout {
+  max-width: 1320px;
+  gap: 46px;
+  padding: 30px 38px 16px;
+}
+#app.modern-app .tasks-col { flex: 1 1 auto; }
+#app.modern-app .side-col {
+  flex: 0 0 276px;
+  width: 276px;
+  max-width: 276px;
+  gap: 0;
+  padding-right: 0;
+}
+#app.modern-app .workspace-intro { margin: 0 0 25px; }
+#app.modern-app .section-kicker,
+#app.modern-app .panel-eyebrow { font-size: 8px; letter-spacing: 1.65px; }
+#app.modern-app .workspace-title-row { margin-top: 10px; gap: 10px; }
+#app.modern-app .workspace-title { font-size: 30px; font-weight: 680; letter-spacing: -.7px; }
+#app.modern-app .workspace-date { font-size: 10px; letter-spacing: .8px; }
+#app.modern-app .workspace-subtitle { margin-top: 8px; font-size: 11px; color: var(--text-dim); }
+
+/* 统计信息成为一条工作摘要，而不是卡片组。 */
+#app.modern-app .stat-cards {
+  display: flex;
+  align-items: baseline;
+  gap: 0;
+  margin: 0 0 27px;
+  border-top: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border-soft);
+}
+#app.modern-app .stat-card { flex: 0 0 auto; padding: 11px 22px 11px 0; }
+#app.modern-app .stat-card + .stat-card { border-left: 0; padding-left: 22px; }
+#app.modern-app .stat-card + .stat-card::before { content: "·"; position: absolute; left: 0; color: var(--text-faint); }
+#app.modern-app .stat-card::after { display: none; }
+#app.modern-app .stat-topline { display: flex; gap: 7px; }
+#app.modern-app .stat-index { display: none; }
+#app.modern-app .stat-value { order: 2; font-size: 18px; font-weight: 720; }
+#app.modern-app .stat-label { order: 1; margin: 0; font-size: 10px; color: var(--text-dim); letter-spacing: 0; }
+#app.modern-app .stat-topline { justify-content: flex-start; }
+
+#app.modern-app .section-head { margin: 0 0 10px; }
+#app.modern-app .section-head h2 { font-size: 11px; letter-spacing: .4px; font-weight: 700; }
+#app.modern-app .section-head h2::before { width: 5px; height: 5px; margin-right: 7px; }
+#app.modern-app .task-tools { margin: 0 0 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border-soft); }
+#app.modern-app .view-mode-switch { border: 0; background: transparent; gap: 16px; }
+#app.modern-app .view-mode-switch .mode-tab { min-height: 27px; padding: 0 0 7px; border: 0; border-bottom: 1px solid transparent; border-radius: 0; background: transparent; color: var(--text-faint); }
+#app.modern-app .view-mode-switch .mode-tab.active { border-bottom-color: var(--accent); color: var(--text); background: transparent; }
+#app.modern-app .task-tools-row { gap: 10px; }
+#app.modern-app .task-search,
+#app.modern-app .task-filter-select { min-height: 32px; border-radius: 7px; background: var(--bg-soft); border-color: var(--border-soft); }
+
+#app.modern-app .task-list { padding: 0 0 20px; }
+#app.modern-app .time-group { margin-bottom: 23px; }
+#app.modern-app .time-group-label { margin: 0 0 2px; font-size: 9px; letter-spacing: 1.2px; color: var(--text-faint); }
+#app.modern-app .time-group-label::after { background: var(--border-soft); }
+#app.modern-app .task-item {
+  min-height: 62px;
+  margin-bottom: 0;
+  padding: 14px 5px 14px 10px;
+  gap: 12px;
+  border: 0;
+  border-top: 1px solid var(--border-soft);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transition: background .18s ease, padding-left .18s ease;
+  animation: df-row-in .28s ease both;
+}
+#app.modern-app .task-item:last-child { border-bottom: 1px solid var(--border-soft); }
+#app.modern-app .task-item:hover { border-color: var(--border-soft); background: color-mix(in srgb, var(--card) 55%, transparent); box-shadow: none; transform: none; padding-left: 14px; }
+#app.modern-app .task-item::before { top: 15px; bottom: 15px; left: 0; width: 2px; border-radius: 2px; opacity: .85; }
+#app.modern-app .task-check { width: 18px; height: 18px; border-color: var(--text-faint); }
+#app.modern-app .task-title { font-size: 14px; font-weight: 560; letter-spacing: -.1px; }
+#app.modern-app .task-meta { gap: 8px; margin-top: 4px; font-size: 10px; }
+#app.modern-app .task-meta .time-chip { color: var(--teal); }
+#app.modern-app .task-edit { opacity: 0; }
+#app.modern-app .task-item:hover .task-edit { opacity: .75; }
+#app.modern-app .task-item.done { opacity: .42; }
+
+/* 右栏成为安静的工具栏，而不是三张浮动卡片。 */
+#app.modern-app .side-col > .week-cal,
+#app.modern-app .side-col > .quick-add,
+#app.modern-app .side-col > .notes-panel {
+  width: auto;
+  margin: 0;
+  padding: 0 0 18px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+#app.modern-app .side-col > * + * { padding-top: 18px; border-top: 1px solid var(--border-soft); }
+#app.modern-app .week-cal { border-top: 2px solid var(--accent) !important; padding-top: 14px !important; }
+#app.modern-app .week-cal h3 { font-size: 14px; color: var(--text); }
+#app.modern-app .week-cal-head { margin-bottom: 13px; }
+#app.modern-app .week-nav { color: var(--text-faint); }
+#app.modern-app .week-day { border-radius: 8px; }
+#app.modern-app .week-day.selected { background: var(--accent); color: #171b1e; box-shadow: none; }
+#app.modern-app .week-day.today:not(.selected) { color: var(--accent); border-color: var(--accent); }
+#app.modern-app .quick-add h3,
+#app.modern-app .notes-panel h3 { font-size: 14px; color: var(--text); }
+#app.modern-app .quick-add .panel-heading,
+#app.modern-app .notes-panel .panel-heading { margin-bottom: 12px; }
+#app.modern-app .quick-add input,
+#app.modern-app .quick-add select { background: var(--bg-soft); border-color: var(--border-soft); border-radius: 7px; }
+#app.modern-app .quick-add .qa-submit { border-radius: 7px; box-shadow: none; }
+#app.modern-app .note-row { padding: 9px 0; border-bottom: 1px solid var(--border-soft); border-radius: 0; background: transparent; }
+#app.modern-app .note-row:hover { background: transparent; }
+#app.modern-app .statusbar { min-height: 28px; padding: 6px 32px; background: var(--bg); border-top-color: var(--border-soft); }
+
+@keyframes df-row-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #app.modern-app .task-item { animation: none; transition: none; }
+}
+
+@media (max-width: 900px) {
+  #app.modern-app .layout { gap: 26px; padding-inline: 24px; }
+  #app.modern-app .side-col { flex-basis: 250px; width: 250px; max-width: 250px; }
+  #app.modern-app .topbar { padding-inline: 24px; }
+}
+/* v2 cleanup: remove the last remaining dashboard slab */
+#app.modern-app .stat-cards { background: transparent; border-radius: 0; box-shadow: none; }
+#app.modern-app .stat-card:hover { background: transparent; }
+
+:root[data-theme="light"] #app.modern-app {
+  --bg: #f3f5f2;
+  --bg-soft: #e9eeeb;
+  --card: #fffefa;
+  --card-hover: #f6f9f6;
+  --border: #d5dfda;
+  --border-soft: #e1e8e4;
+  --text: #263238;
+  --text-dim: #617078;
+  --text-faint: #94a2a6;
+  --accent: #bd7433;
+  --accent-soft: rgba(189, 116, 51, .12);
+  --teal: #378e88;
+  --red: #c45e5d;
+  --green: #4d9960;
+  --blue: #4f83b6;
+}
+/* 今日进度：改为稳定对齐的横向进度组件，避免环形 SVG 与文字错位。 */
+#app.modern-app .progress-cluster {
+  flex: 0 0 176px;
+  width: 176px;
+  padding-left: 16px;
+  margin-left: 2px;
+  border-left: 1px solid var(--border-soft);
+}
+#app.modern-app .progress-meter {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  -webkit-app-region: no-drag;
+}
+#app.modern-app .progress-meter-head,
+#app.modern-app .progress-meter-foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  white-space: nowrap;
+}
+#app.modern-app .progress-meter-label {
+  color: var(--text-faint);
+  font-size: 9px;
+  letter-spacing: .8px;
+}
+#app.modern-app .progress-meter-value {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+#app.modern-app .progress-meter-track {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-soft));
+}
+#app.modern-app .progress-meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width .45s cubic-bezier(.22, 1, .36, 1);
+}
+#app.modern-app .progress-meter.complete .progress-meter-fill { background: var(--green); }
+#app.modern-app .progress-meter-foot {
+  color: var(--text-faint);
+  font-size: 8px;
+}
+#app.modern-app .progress-meter-foot span:last-child {
+  color: var(--accent);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+#app.modern-app .progress-meter.complete .progress-meter-foot span:last-child { color: var(--green); }
+/* 主工作区标题：把稀疏的四段文字改成一个有层级的日摘要。 */
+#app.modern-app .workspace-intro {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 28px;
+  margin: 0 0 25px;
+  padding-bottom: 19px;
+  border-bottom: 1px solid var(--border-soft);
+}
+#app.modern-app .workspace-intro-main { min-width: 0; }
+#app.modern-app .workspace-title-row { margin-top: 7px; }
+#app.modern-app .workspace-title { font-size: 28px; }
+#app.modern-app .workspace-subtitle { margin-top: 8px; }
+#app.modern-app .workspace-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(54px, 1fr));
+  flex: 0 0 340px;
+  border-left: 1px solid var(--border-soft);
+}
+#app.modern-app .workspace-metric {
+  display: grid;
+  gap: 4px;
+  padding: 0 13px;
+  border-right: 1px solid var(--border-soft);
+}
+#app.modern-app .workspace-metric strong {
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 720;
+  font-variant-numeric: tabular-nums;
+}
+#app.modern-app .workspace-metric span { color: var(--text-faint); font-size: 9px; white-space: nowrap; }
+#app.modern-app .workspace-metric.hot strong { color: var(--accent); }
+#app.modern-app .workspace-metric.danger strong { color: var(--red); }
+#app.modern-app .workspace-metric.progress strong { color: var(--teal); }
+#app.modern-app .workspace-metric.done strong { color: var(--green); }
+@media (max-width: 900px) {
+  #app.modern-app .workspace-intro { align-items: flex-start; flex-direction: column; gap: 16px; }
+  #app.modern-app .workspace-metrics { width: 100%; flex-basis: auto; }
+}
+
+/* ============================================================
+   Unified select control
+   All dropdowns share one compact, quiet control language.
+   ============================================================ */
+body.modern-ui select {
+  appearance: none;
+  -webkit-appearance: none;
+  min-height: 36px;
+  padding: 0 34px 0 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+  background-color: var(--bg-soft);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14' fill='none'%3E%3Cpath d='m3.5 5.25 3.5 3.5 3.5-3.5' stroke='%239aa3b2' stroke-width='1.35' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 14px;
+  color: var(--text);
+  font: 500 12px/1 var(--font);
+  letter-spacing: .05px;
+  cursor: pointer;
+  transition: border-color .16s ease, background-color .16s ease, box-shadow .16s ease;
+}
+body.modern-ui select:hover {
+  border-color: var(--text-faint);
+  background-color: var(--card-hover);
+}
+body.modern-ui select:focus,
+body.modern-ui select:focus-visible {
+  border-color: var(--accent);
+  background-color: var(--card);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  outline: none;
+}
+body.modern-ui select:disabled { cursor: default; opacity: .55; }
+body.modern-ui select option {
+  background: var(--card);
+  color: var(--text);
+  font: 500 12px var(--font);
+}
+/* Keep compact controls compact while preserving the same arrow, padding and focus ring. */
+#app.modern-app .task-filter-select { min-height: 36px; padding: 0 34px 0 11px; }
+#app.modern-app .qa-row select { min-height: 36px; padding: 0 34px 0 11px; }
+body.modern-ui .task-editor-field select,
+body.modern-ui .export-format-select,
+body.modern-ui .cli-path-policy-select { min-height: 36px; padding: 0 34px 0 11px; }
+
+/* Native arrow is intentional: it stays visible in both the closed field and the OS popup. */
+body.modern-ui select {
+  appearance: auto;
+  -webkit-appearance: menulist;
+  padding-right: 11px;
+  background-image: none;
+  background-color: var(--bg-soft);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.035), 0 1px 0 rgba(0,0,0,.12);
+}
+body.modern-ui select:hover {
+  background-color: color-mix(in srgb, var(--card-hover) 88%, var(--accent) 12%);
+}
+body.modern-ui select:focus,
+body.modern-ui select:focus-visible {
+  background-color: var(--card);
+  box-shadow: 0 0 0 3px var(--accent-soft), inset 0 1px 0 rgba(255,255,255,.04);
+}
+
+/* Custom dropdown surface: the native select remains the data source, while the visible menu is app-owned. */
+body.modern-ui .custom-select {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  width: 100%;
+}
+body.modern-ui .custom-select .native-select-source {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+body.modern-ui .custom-select-trigger {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 34px 0 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--card) 55%, var(--bg-soft)), var(--bg-soft));
+  color: var(--text);
+  font: 600 12px/1 var(--font);
+  text-align: left;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 1px 0 rgba(0,0,0,.12);
+  transition: border-color .16s ease, background .16s ease, box-shadow .16s ease;
+}
+body.modern-ui .custom-select-trigger::after {
+  content: "";
+  position: absolute;
+  right: 11px;
+  width: 8px;
+  height: 8px;
+  border-right: 1.5px solid var(--text-dim);
+  border-bottom: 1.5px solid var(--text-dim);
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform .16s ease, border-color .16s ease;
+}
+body.modern-ui .custom-select.is-open .custom-select-trigger,
+body.modern-ui .custom-select-trigger:hover {
+  border-color: var(--accent);
+  background: var(--card-hover);
+}
+body.modern-ui .custom-select.is-open .custom-select-trigger {
+  box-shadow: 0 0 0 3px var(--accent-soft), inset 0 1px 0 rgba(255,255,255,.04);
+}
+body.modern-ui .custom-select.is-open .custom-select-trigger::after {
+  border-color: var(--accent);
+  transform: translateY(2px) rotate(225deg);
+}
+body.modern-ui .custom-select.is-disabled .custom-select-trigger,
+body.modern-ui .custom-select-trigger:disabled { cursor: default; opacity: .55; }
+body.modern-ui .custom-select-menu {
+  position: fixed;
+  z-index: 500;
+  display: grid;
+  gap: 3px;
+  max-height: min(320px, calc(100vh - 24px));
+  overflow-y: auto;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--card) 96%, transparent);
+  box-shadow: 0 18px 42px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.035);
+  backdrop-filter: blur(14px);
+  animation: custom-select-in .14s ease both;
+}
+body.modern-ui .custom-select-option {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 7px;
+  color: var(--text-dim);
+  font: 500 12px/1 var(--font);
+  text-align: left;
+  white-space: nowrap;
+}
+body.modern-ui .custom-select-option:hover,
+body.modern-ui .custom-select-option:focus-visible { background: var(--accent-soft); color: var(--text); outline: none; }
+body.modern-ui .custom-select-option.is-selected { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); font-weight: 700; }
+body.modern-ui .custom-select-option.is-selected::before { content: "✓"; margin-right: 7px; font-size: 11px; }
+@keyframes custom-select-in { from { opacity: 0; transform: translateY(-3px) scale(.985); } to { opacity: 1; transform: none; } }
+#app.modern-app .task-tools-row > .custom-select { flex: 0 0 116px; width: 116px; }
+#app.modern-app .qa-row > .custom-select { flex: 1 1 0; width: auto; min-width: 0; }
+body.modern-ui .task-editor-field > .custom-select,
+body.modern-ui .export-field > .custom-select,
+body.modern-ui .cli-path-policy-row > .custom-select { width: 100%; }
+/* Hidden must win over the menu's display:grid rule. */
+body.modern-ui .custom-select-menu[hidden] { display: none; }
+/* Selected dropdown options use a quiet accent rail instead of a text checkmark. */
+body.modern-ui .custom-select-option.is-selected {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
+  color: var(--accent);
+  font-weight: 700;
+}
+body.modern-ui .custom-select-option.is-selected::before { content: none; }
+
+/* Completion mark is drawn as a small geometric check, not a text glyph. */
+#app.modern-app .task-checkmark {
+  display: block;
+  width: 8px;
+  height: 5px;
+  margin: -2px 0 0 1px;
+  border-left: 1.7px solid currentColor;
+  border-bottom: 1.7px solid currentColor;
+  transform: rotate(-45deg);
+  transform-origin: center;
+}
+/* Quick add: turn a dense control grid into a guided mini-form. */
+#app.modern-app .quick-add form { gap: 12px; margin-top: 14px; }
+#app.modern-app .qa-field { display: grid; gap: 5px; min-width: 0; flex: 1 1 0; }
+#app.modern-app .qa-field-label {
+  color: var(--text-faint);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .6px;
+  line-height: 1;
+}
+#app.modern-app .qa-title-field { gap: 7px; }
+#app.modern-app .qa-title-field input { min-height: 43px; font-size: 13px; }
+#app.modern-app .qa-row { align-items: end; gap: 10px; }
+#app.modern-app .qa-row .custom-select { flex: 1 1 0; min-width: 0; width: auto; }
+#app.modern-app .qa-row input[type="time"] { min-height: 36px; }
+#app.modern-app .qa-project-row { margin-bottom: 1px; }
+#app.modern-app .qa-remind-time-field[hidden] { display: none; }
+#app.modern-app .qa-hint { margin-top: -2px; color: var(--text-faint); font-size: 10px; line-height: 1.45; }
+/* Native time/date picker indicators need an explicit light treatment on dark surfaces. */
+body.modern-ui input[type="time"]::-webkit-calendar-picker-indicator,
+body.modern-ui input[type="date"]::-webkit-calendar-picker-indicator {
+  opacity: .9;
+  filter: invert(78%) sepia(11%) saturate(330%) hue-rotate(158deg) brightness(103%);
+  cursor: pointer;
+}
+:root[data-theme="light"] body.modern-ui input[type="time"]::-webkit-calendar-picker-indicator,
+:root[data-theme="light"] body.modern-ui input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: none;
+  opacity: .68;
+}
+/* Project view switch + condensed tree canvas. */
+#app.modern-app .projects-toolbar { justify-content: flex-start; gap: 8px; }
+#app.modern-app .project-view-switch {
+  display: inline-flex;
+  gap: 2px;
+  margin-right: auto;
+  padding: 3px;
+  border: 1px solid var(--border-soft);
+  border-radius: 9px;
+  background: var(--bg-soft);
+}
+#app.modern-app .project-view-tab {
+  min-height: 27px;
+  padding: 0 10px;
+  border-radius: 6px;
+  color: var(--text-faint);
+  font-size: 10px;
+  transition: color .16s ease, background .16s ease;
+}
+#app.modern-app .project-view-tab:hover { color: var(--text); }
+#app.modern-app .project-view-tab.active {
+  background: var(--card);
+  color: var(--accent);
+  box-shadow: 0 1px 4px rgba(0,0,0,.14);
+}
+#app.modern-app .projects-tree-view {
+  display: grid;
+  gap: 8px;
+  padding: 4px 2px 22px 8px;
+}
+#app.modern-app .projects-tree-project {
+  position: relative;
+  padding-left: 17px;
+}
+#app.modern-app .projects-tree-project::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 20px;
+  bottom: 0;
+  width: 1px;
+  background: var(--border-soft);
+}
+#app.modern-app .projects-tree-project:last-child::before { bottom: 22px; }
+#app.modern-app .projects-tree-project-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 42px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border-soft);
+}
+#app.modern-app .projects-tree-node-dot {
+  position: absolute;
+  left: -17px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: var(--bg);
+  box-shadow: 0 0 0 3px var(--bg);
+}
+#app.modern-app .projects-tree-project-copy { min-width: 0; flex: 1; }
+#app.modern-app .projects-tree-project-copy h3 { font-size: 13px; font-weight: 700; }
+#app.modern-app .projects-tree-project-copy p { margin-top: 3px; color: var(--text-faint); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#app.modern-app .projects-tree-project-meta { color: var(--text-faint); font-size: 10px; white-space: nowrap; }
+#app.modern-app .projects-tree-children {
+  position: relative;
+  display: grid;
+  gap: 0;
+  padding: 3px 0 4px 14px;
+}
+#app.modern-app .projects-tree-children::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 18px;
+  width: 1px;
+  background: color-mix(in srgb, var(--border-soft) 80%, var(--accent));
+}
+#app.modern-app .projects-tree-children .task-item {
+  position: relative;
+  min-height: 50px;
+  padding: 10px 5px 10px 13px;
+  border-top: 0;
+}
+#app.modern-app .projects-tree-children .task-item::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 25px;
+  width: 12px;
+  height: 1px;
+  background: var(--border-soft);
+}
+#app.modern-app .projects-tree-project.is-archived .projects-tree-node-dot { border-color: var(--text-faint); }
+#app.modern-app .projects-tree-project.is-archived { opacity: .64; }
+/* Keep the mode switch/search anchor stable across day, project and matrix views. */
+#app.modern-app .workspace-intro {
+  min-height: 96px;
+  align-items: center;
+}
+#app.modern-app .workspace-intro-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  min-height: 54px;
+}
+#app.modern-app .workspace-title-row { margin-top: 0; }
+#app.modern-app .workspace-metrics { align-self: center; min-height: 38px; }
+#app.modern-app .section-head { min-height: 28px; }
+#app.modern-app .task-tools { min-height: 70px; }
+@media (max-width: 900px) {
+  #app.modern-app .workspace-intro { min-height: 145px; }
+  #app.modern-app .workspace-intro-main { min-height: 42px; }
+}
+/* Typography pass: increase supporting text while tightening the vertical rhythm. */
+#app.modern-app .workspace-intro {
+  min-height: 72px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+}
+#app.modern-app .workspace-intro-main { min-height: 42px; }
+#app.modern-app .workspace-metrics { min-height: 36px; }
+#app.modern-app .workspace-metric { padding-inline: 15px; gap: 5px; }
+#app.modern-app .workspace-metric strong { font-size: 21px; }
+#app.modern-app .workspace-metric span { font-size: 10px; }
+#app.modern-app .section-head { min-height: 25px; margin-bottom: 8px; }
+#app.modern-app .section-head h2 { font-size: 13px; letter-spacing: .25px; }
+#app.modern-app .section-head .count-badge { font-size: 11px; }
+#app.modern-app .section-head .mini-btn { font-size: 12px; }
+#app.modern-app .task-tools { min-height: 62px; }
+#app.modern-app .view-mode-switch .mode-tab { min-height: 30px; padding-bottom: 8px; font-size: 12px; }
+#app.modern-app .task-search,
+#app.modern-app .task-filter-select { font-size: 12px; }
+@media (max-width: 900px) {
+  #app.modern-app .workspace-intro { min-height: 122px; }
+  #app.modern-app .workspace-intro-main { min-height: 38px; }
+}
+/* Settings redesign */
+body.modern-ui .settings-panel {
+  width: min(560px, calc(100vw - 32px));
+  padding: 26px;
+  border-radius: 18px;
+}
+body.modern-ui .settings-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+body.modern-ui .settings-eyebrow { color: var(--accent); font-size: 9px; font-weight: 800; letter-spacing: 1.6px; }
+body.modern-ui .settings-heading .tp-title { margin-top: 6px; font-size: 24px; letter-spacing: -.5px; }
+body.modern-ui .settings-intro { margin: 12px 0 22px; color: var(--text-dim); font-size: 12px; line-height: 1.6; }
+body.modern-ui .settings-section { padding-top: 18px; border-top: 1px solid var(--border-soft); }
+body.modern-ui .settings-section + .settings-section { margin-top: 20px; }
+body.modern-ui .settings-section-head { display: grid; gap: 4px; margin-bottom: 12px; }
+body.modern-ui .settings-section-head h3 { font-size: 14px; font-weight: 750; }
+body.modern-ui .settings-section-head p { color: var(--text-faint); font-size: 11px; line-height: 1.45; }
+body.modern-ui .settings-panel .cli-path-autostart { margin-top: 10px; min-height: 34px; padding: 0 11px; border: 1px solid var(--border-soft); border-radius: 9px; background: var(--bg-soft); }
+body.modern-ui .settings-panel .cli-path-policy-row { margin-top: 8px; }
+body.modern-ui .settings-panel .cli-path-policy-label { font-size: 12px; }
+body.modern-ui .settings-cli-section .cli-path-status { margin-top: 2px; min-height: 58px; border-radius: 10px; }
+body.modern-ui .settings-panel .cli-path-directory-field { margin-top: 12px; }
+body.modern-ui .settings-panel .cli-path-actions { margin-top: 13px; }
+body.modern-ui .settings-panel .cli-path-actions .tp-btn { flex: 1; min-height: 40px; }
+body.modern-ui .settings-panel .cli-path-hint { margin-top: 11px; }
+body.modern-ui .settings-panel.is-preview .cli-path-status { border-color: var(--border); }
+/* Final settings typography/alignment pass */
+body.modern-ui .settings-panel {
+  font-family: var(--font);
+  color: var(--text);
+}
+body.modern-ui .settings-panel .settings-heading .tp-title {
+  margin-top: 5px;
+  font-size: 25px;
+  line-height: 1.15;
+  font-weight: 760;
+  letter-spacing: -.55px;
+}
+body.modern-ui .settings-eyebrow {
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1.8px;
+}
+body.modern-ui .settings-intro {
+  max-width: 490px;
+  margin: 13px 0 24px;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.65;
+}
+body.modern-ui .settings-section {
+  padding-top: 19px;
+  border-top: 1px solid var(--border-soft);
+}
+body.modern-ui .settings-section + .settings-section { margin-top: 22px; }
+body.modern-ui .settings-section-head { display: grid; gap: 5px; margin-bottom: 13px; }
+body.modern-ui .settings-section-head h3 { font-size: 14px; line-height: 1.2; font-weight: 760; }
+body.modern-ui .settings-section-head p { color: var(--text-faint); font-size: 11px; line-height: 1.45; }
+body.modern-ui .settings-toggle-row,
+body.modern-ui .settings-option-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 52px;
+  padding: 9px 11px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-soft) 72%, transparent);
+}
+body.modern-ui .settings-option-row + .settings-option-row,
+body.modern-ui .settings-toggle-row + .settings-option-row { margin-top: 8px; }
+body.modern-ui .settings-toggle-row { justify-content: flex-start; cursor: pointer; }
+body.modern-ui .settings-toggle-row input { flex: 0 0 auto; width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+body.modern-ui .settings-option-copy { display: grid; gap: 4px; min-width: 0; }
+body.modern-ui .settings-option-copy strong { color: var(--text); font-size: 12px; font-weight: 650; }
+body.modern-ui .settings-option-copy small { color: var(--text-faint); font-size: 10px; line-height: 1.35; }
+body.modern-ui .settings-option-row > .custom-select { flex: 0 0 190px; width: 190px; }
+body.modern-ui .settings-cli-section .cli-path-status {
+  display: grid;
+  grid-template-columns: 9px minmax(0, 1fr);
+  align-items: start;
+  gap: 11px;
+  min-height: 65px;
+  padding: 13px 14px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-soft) 80%, transparent);
+}
+body.modern-ui .settings-status-copy { display: grid; gap: 5px; min-width: 0; }
+body.modern-ui .settings-status-label { color: var(--text); font-size: 12px; line-height: 1.2; font-weight: 720; }
+body.modern-ui .settings-cli-section .cli-path-status-text { color: var(--text-dim); font-size: 11px; line-height: 1.45; }
+body.modern-ui .settings-cli-section .cli-path-status.is-error { border-color: color-mix(in srgb, var(--red) 50%, var(--border)); background: color-mix(in srgb, var(--red) 7%, var(--bg-soft)); }
+body.modern-ui .settings-cli-section .cli-path-status.is-preview { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: color-mix(in srgb, var(--accent) 7%, var(--bg-soft)); }
+body.modern-ui .settings-cli-section .cli-path-dot { margin-top: 3px; }
+body.modern-ui .settings-panel .cli-path-directory-field { gap: 7px; margin-top: 14px; }
+body.modern-ui .settings-panel .cli-path-label { color: var(--text-faint); font-size: 10px; font-weight: 700; letter-spacing: .5px; }
+body.modern-ui .settings-panel .cli-path-directory { min-height: 38px; padding: 10px 11px; border-radius: 8px; font-size: 10px; }
+body.modern-ui .settings-panel .cli-path-actions { gap: 9px; margin-top: 14px; }
+body.modern-ui .settings-panel .cli-path-actions .tp-btn { flex: 1; min-height: 40px; font-size: 12px; font-weight: 700; }
+body.modern-ui .settings-panel .cli-path-hint { margin-top: 11px; color: var(--text-faint); font-size: 10px; line-height: 1.5; }
+@media (max-width: 560px) {
+  body.modern-ui .settings-panel .settings-option-row { align-items: flex-start; flex-direction: column; gap: 9px; }
+  body.modern-ui .settings-option-row > .custom-select { width: 100%; flex-basis: auto; }
+}

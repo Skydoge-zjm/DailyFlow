@@ -1,6 +1,6 @@
 [package]
 name = "dailyflow"
-version = "0.1.0"
+version = "0.1.1"
 description = "DailyFlow - AI-driven daily schedule manager"
 authors = ["Skydoge"]
 license = "MIT"

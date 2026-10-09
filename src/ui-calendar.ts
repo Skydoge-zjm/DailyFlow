@@ -42,7 +42,6 @@ export function weekCal(data: Data, selected: string, today: string, opts: Rende
     { class: "week-cal" },
     el("div", { class: "week-cal-head" },
       el("div", { class: "panel-heading" },
-        el("div", { class: "panel-eyebrow" }, "WEEK VIEW"),
         el("h3", {}, selMonth),
       ),
       el("button", {

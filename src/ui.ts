@@ -9,7 +9,7 @@ import { openThemePanel } from "./theme-panel.ts";
 import { openCliPathPanel } from "./cli-path-panel.ts";
 import { renderProjectsBoard, type TaskFilter } from "./ui-projects.ts";
 import { renderMatrixBoard } from "./ui-matrix.ts";
-import { statCards, dayProgress, buildRing } from "./ui-metrics.ts";
+import { dayProgress, buildProgressMeter } from "./ui-metrics.ts";
 import { taskItem } from "./ui-task-card.ts";
 import { weekCal } from "./ui-calendar.ts";
 import { openExportPanel } from "./export-panel.ts";
@@ -30,38 +30,36 @@ export function handleWorkspaceShortcut(index: number): void {
   if (!next) return;
   taskView = next;
   taskSearch = "";
-  window.__dailyflow?.rerender();
+  window.__dailyflow?.rerender(true);
 }
 
 function fmtDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function openCountText(tasks: Task[]): string {
-  const scheduled = tasks.filter((t) => t.kind !== "goal");
-  const open = scheduled.filter((t) => !t.done).length;
-  if (!scheduled.length) return "还没有安排，先从右侧捕捉一项计划";
-  return open ? `${scheduled.length} 项计划 · ${open} 项待完成` : `${scheduled.length} 项计划 · 全部完成`;
-}
-
-export function renderApp(root: HTMLElement, opts: RenderOpts): void {
+export function renderApp(root: HTMLElement, opts: RenderOpts, preserveChrome = false): void {
   const searchFocused = document.activeElement?.classList.contains("task-search");
   const searchCaret = searchFocused ? (document.activeElement as HTMLInputElement).selectionStart : null;
+  const previousStatusbar = preserveChrome ? root.querySelector<HTMLElement>(".statusbar") : null;
   document.body.classList.add("modern-ui");
   root.classList.add("modern-app");
-  root.innerHTML = "";
+  if (preserveChrome) root.querySelector(".layout")?.remove();
+  else root.innerHTML = "";
   const { data, selectedDate } = opts;
   const today = fmtDate(new Date());
   const visibleProjectIds = new Set(data.projects.filter((project) => showArchivedProjects || !project.archived).map((project) => project.id));
-  const projectOpenCount = data.tasks.filter((task) => !task.done && (!task.project_id || visibleProjectIds.has(task.project_id))).length;
+  const projectTasks = data.tasks.filter((task) => task.project_id && visibleProjectIds.has(task.project_id));
+  const projectDoneCount = projectTasks.filter((task) => task.done).length;
+  const projectOpenCount = projectTasks.length - projectDoneCount;
+  const projectCount = visibleProjectIds.size;
+  const archivedProjectCount = data.projects.filter((project) => project.archived).length;
 
   // ===== 顶栏 =====
   const sel = new Date(selectedDate + "T00:00:00");
   const dayCount = data.tasks.filter((t) => t.date === selectedDate && t.kind !== "goal").length;
-  const progress = dayProgress(data, selectedDate);
-  const ring = buildRing(progress, dayCount > 0 && progress >= 1);
-
   const doneCount = data.tasks.filter((t) => t.date === selectedDate && t.kind !== "goal" && t.done).length;
+  const progress = dayProgress(data, selectedDate);
+  const progressMeter = buildProgressMeter(progress, doneCount, dayCount);
   const topbar = el(
     "header",
     { class: "topbar" },
@@ -76,17 +74,10 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
     el(
       "div",
       { class: "date-block" },
-      el("div", { class: "date-kicker" }, today === selectedDate ? "FOCUS DAY" : "SELECTED DAY"),
       el("div", { class: "date-main" }, `${sel.getMonth() + 1}月${sel.getDate()}日`),
-      el("div", { class: "date-sub" }, `${WD[sel.getDay()]} · ${today === selectedDate ? "今天" : selectedDate}`),
+      el("div", { class: "date-sub" }, today === selectedDate ? `${WD[sel.getDay()]} · 今天` : WD[sel.getDay()]),
     ),
-    el("div", { class: "progress-cluster" },
-      ring,
-      el("div", { class: "progress-copy" },
-        el("span", { class: "progress-label" }, "今日进度"),
-        el("strong", {}, `${doneCount} / ${dayCount || 0} 项完成`),
-      ),
-    ),
+    el("div", { class: "progress-cluster" }, progressMeter),
     el("div", { class: "spacer" }),
     el("div", { class: "topbar-actions" },
       el("button", { class: "icon-btn action-btn", title: "新建便签", "aria-label": "新建便签", onclick: () => opts.onNewNote() },
@@ -221,7 +212,7 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
     button.addEventListener("click", () => {
       taskView = value;
       taskSearch = "";
-      window.__dailyflow.rerender();
+      window.__dailyflow.rerender(true);
     });
     modeSwitch.append(button);
   }
@@ -240,7 +231,7 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
   const sectionTitle = el("h2", {}, viewTitle());
   const refreshTaskList = () => {
     if (taskView === "projects") {
-      const board = renderProjectsBoard(data, opts, taskSearch, taskFilter, showArchivedProjects, () => { showArchivedProjects = !showArchivedProjects; window.__dailyflow.rerender(); }, taskItem);
+      const board = renderProjectsBoard(data, opts, taskSearch, taskFilter, showArchivedProjects, () => { showArchivedProjects = !showArchivedProjects; window.__dailyflow.rerender(true); }, taskItem);
       countBadge.textContent = String(board.count);
       listEl.replaceChildren(board.element);
       return;
@@ -280,21 +271,42 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
     refreshTaskList();
   });
   refreshTaskList();
+  const dayScheduled = dayTasks.filter((task) => task.kind !== "goal");
+  const dayDone = dayScheduled.filter((task) => task.done).length;
+  const dayOpen = dayScheduled.length - dayDone;
+  const dayOverdue = data.tasks.filter((task) => !task.done && task.kind !== "goal" && task.date !== "" && task.date < today).length;
+  const matrixCounts = (['q1', 'q2', 'q3', 'q4'] as const).map((quadrant) => data.tasks.filter((task) => !task.done && taskQuadrant(task) === quadrant).length);
+  const summaryMetric = (label: string, value: string, tone = "") =>
+    el("div", { class: `workspace-metric${tone ? ` ${tone}` : ""}` },
+      el("strong", {}, value),
+      el("span", {}, label),
+    );
   const tasksCol = el(
     "div",
     { class: "tasks-col" },
     el("div", { class: "workspace-intro" },
-      el("div", { class: "section-kicker" }, taskView === "projects" ? "WORKSPACE / PROJECTS" : taskView === "matrix" ? "WORKSPACE / PRIORITY" : today === selectedDate ? "WORKSPACE / TODAY" : "WORKSPACE / SCHEDULE"),
-      el("div", { class: "workspace-title-row" },
-        el("h1", { class: "workspace-title" }, taskView === "projects" ? "项目任务树" : taskView === "matrix" ? "重要性矩阵" : today === selectedDate ? "今天的节奏" : "这一天的安排"),
-        taskView === "day" ? el("span", { class: "workspace-date" }, selectedDate.slice(5).replace("-", " / ")) : null,
+      el("div", { class: "workspace-intro-main" },
+        el("div", { class: "workspace-title-row" },
+          el("h1", { class: "workspace-title" }, taskView === "projects" ? "项目任务树" : taskView === "matrix" ? "重要性矩阵" : "今日安排"),
+        ),
       ),
-      el("p", { class: "workspace-subtitle" }, taskView === "projects"
-        ? `${data.projects.filter((project) => showArchivedProjects || !project.archived).length} 个项目 · ${projectOpenCount} 项未完成`
-        : taskView === "matrix" ? "把注意力放在真正重要的事情上"
-        : openCountText(dayTasks)),
+      taskView === "day" ? el("div", { class: "workspace-metrics", "aria-label": "今日摘要" },
+        summaryMetric("总任务", String(dayScheduled.length)),
+        summaryMetric("待完成", String(dayOpen), dayOpen ? "hot" : "done"),
+        summaryMetric("已完成", String(dayDone), "done"),
+        summaryMetric("逾期", String(dayOverdue), dayOverdue ? "danger" : ""),
+      ) : taskView === "projects" ? el("div", { class: "workspace-metrics", "aria-label": "项目摘要" },
+        summaryMetric("项目", String(projectCount)),
+        summaryMetric("待完成", String(projectOpenCount), projectOpenCount ? "hot" : "done"),
+        summaryMetric("已完成", String(projectDoneCount), "done"),
+        summaryMetric("已归档", String(archivedProjectCount)),
+      ) : el("div", { class: "workspace-metrics", "aria-label": "重要性摘要" },
+        summaryMetric("Q1", String(matrixCounts[0]), matrixCounts[0] ? "danger" : ""),
+        summaryMetric("Q2", String(matrixCounts[1]), matrixCounts[1] ? "hot" : ""),
+        summaryMetric("Q3", String(matrixCounts[2])),
+        summaryMetric("Q4", String(matrixCounts[3])),
+      ),
     ),
-    taskView === "day" ? statCards(data, today) : null,
     el("div", { class: "section-head" },
       sectionTitle,
       countBadge,
@@ -309,12 +321,10 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
         const removed = Number(data?.removed || 0);
         const retained = Number(data?.retained_with_children || 0);
         const deletedIds = data?.deleted_ids || [];
-        window.__dailyflow.rerender();
         if (removed > 0) {
           const suffix = retained ? `，保留 ${retained} 项含子任务的父任务` : "";
           window.__dailyflow.undoToast(`已清理 ${removed} 项${suffix}`, async () => {
-            const restored = await opts.onCall(undoArgs(...deletedIds));
-            if (restored.ok) window.__dailyflow.rerender();
+            await opts.onCall(undoArgs(...deletedIds));
           });
         } else if (retained > 0) {
           window.__dailyflow.toast(`保留 ${retained} 项仍含子任务的父任务`);
@@ -339,13 +349,15 @@ export function renderApp(root: HTMLElement, opts: RenderOpts): void {
     "footer",
     { class: "statusbar" },
     el("span", { class: `status-indicator${opts.syncStatus.state === "retrying" ? " retrying" : ""}`, "aria-hidden": "true" }),
-    el("span", { class: "status-label", role: "status", title: opts.syncStatus.message || "" }, opts.syncStatus.state === "retrying" ? `同步失败，正在重试（第 ${opts.syncStatus.attempt} 次）` : "已同步"),
+    el("span", { class: `status-label ${opts.syncStatus.state === "retrying" ? "retrying" : "synced"}`, role: "status", title: opts.syncStatus.message || "" }, opts.syncStatus.state === "retrying" ? `同步失败，正在重试（第 ${opts.syncStatus.attempt} 次）` : "已同步"),
     el("span", { class: "mono" }, "%APPDATA%\\com.dailyflow.app\\data.json"),
     el("div", { class: "spacer" }),
     el("span", { class: "status-count" }, `共 ${data.tasks.length} 项 · 便签 ${data.notes.length} 张`),
   );
 
-  root.append(topbar, el("div", { class: "layout" }, tasksCol, sideCol), statusbar);
+  const layout = el("div", { class: "layout" }, tasksCol, sideCol);
+  if (preserveChrome && previousStatusbar) root.insertBefore(layout, previousStatusbar);
+  else root.append(topbar, layout, statusbar);
   if (searchFocused) {
     searchInput.focus();
     if (searchCaret !== null) searchInput.setSelectionRange(searchCaret, searchCaret);

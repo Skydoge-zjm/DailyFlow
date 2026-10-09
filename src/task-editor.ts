@@ -173,7 +173,6 @@ export function openTaskEditor(task: Task, opts: RenderOpts): void {
     ]);
     if (args.length === 3 || (await opts.onCall(args)).ok) {
       close();
-      window.__dailyflow.rerender();
     }
   });
   dialog.append(el("div", { class: "task-editor-head" }, el("h2", {}, "编辑任务"), el("span", {}, task.id)), form);

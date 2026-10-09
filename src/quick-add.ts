@@ -3,7 +3,7 @@ import { el, type RenderOpts } from "./ui-shared.ts";
 
 let state = {
   title: "",
-  time: "",
+  time: "08:00",
   kind: "normal",
   quadrant: "q2",
   project: "",
@@ -14,8 +14,9 @@ let state = {
 };
 
 export function quickAdd(opts: RenderOpts, selectedDate: string, projectMode = false): HTMLElement {
-  const title = el("input", { class: "quick-add-title", placeholder: "捕捉一项计划…", "aria-label": "任务标题", "data-focus-key": "quick-title" });
-  const time = el("input", { placeholder: "时间 / 目标日", "aria-label": "时间或目标日期", "data-focus-key": "quick-time" });
+  const title = el("input", { class: "quick-add-title", placeholder: "写下要完成的一件事…", "aria-label": "任务标题", "data-focus-key": "quick-title" });
+  const time = el("input", { type: "time", title: "选择或输入时间", "aria-label": "时间或目标日期", "data-focus-key": "quick-time" });
+  const timeLabel = el("span", { class: "qa-field-label" }, "时间");
   const priority = document.createElement("select");
   priority.dataset.focusKey = "quick-priority";
   for (const [value, label] of [["", "普通"], ["high", "高"], ["low", "低"]] as const) {
@@ -26,7 +27,7 @@ export function quickAdd(opts: RenderOpts, selectedDate: string, projectMode = f
   }
   const kind = document.createElement("select");
   kind.dataset.focusKey = "quick-kind";
-  for (const [value, label] of [["normal", "✓ 待办"], ["deadline", "⏳ 截止"], ["goal", "🌱 长期"]] as const) {
+  for (const [value, label] of [["normal", "待办"], ["deadline", "截止"], ["goal", "长期"]] as const) {
     const option = document.createElement("option");
     option.value = value;
     option.textContent = label;
@@ -70,7 +71,7 @@ export function quickAdd(opts: RenderOpts, selectedDate: string, projectMode = f
   const remindTime = el("input", { type: "time", "aria-label": "指定提醒时间", "data-focus-key": "quick-remind-time" });
 
   title.value = state.title;
-  time.value = state.time;
+  time.value = state.time || "08:00";
   kind.value = state.kind;
   quadrant.value = state.quadrant;
   priority.value = state.priority;
@@ -96,15 +97,33 @@ export function quickAdd(opts: RenderOpts, selectedDate: string, projectMode = f
     if (repeat.disabled) { repeat.value = "none"; state.repeat = "none"; }
     if (remindMode.disabled) { remindMode.value = "off"; state.remindMode = "off"; }
     remindTime.hidden = remindMode.value !== "custom" || remindMode.disabled;
+    remindTimeField.hidden = remindTime.hidden;
     remindTime.required = !remindTime.hidden;
     if (kind.value === "goal") {
-      time.placeholder = "目标日期（可空，如 2026-12-31）";
+      if (time.type !== "date") {
+        time.type = "date";
+        time.value = "";
+      }
+      time.title = "选择或输入目标日期";
+      timeLabel.textContent = "目标日期";
       submitButton.querySelector(".qa-submit-label")!.textContent = "新长期目标";
     } else if (kind.value === "deadline") {
-      time.placeholder = "时间（可空，如 9:30）";
+      if (time.type !== "time") {
+        time.type = "time";
+        time.value = state.time || "08:00";
+      }
+      if (!time.value) time.value = state.time || "08:00";
+      time.title = "选择或输入截止任务的时间";
+      timeLabel.textContent = "时间";
       submitButton.querySelector(".qa-submit-label")!.textContent = "截止于 " + selectedDate.slice(5);
     } else {
-      time.placeholder = "时间（可空，如 9:30）";
+      if (time.type !== "time") {
+        time.type = "time";
+        time.value = state.time || "08:00";
+      }
+      if (!time.value) time.value = state.time || "08:00";
+      time.title = "选择或输入任务时间";
+      timeLabel.textContent = "时间";
       submitButton.querySelector(".qa-submit-label")!.textContent = "添加到 " + selectedDate.slice(5);
     }
   };
@@ -113,18 +132,21 @@ export function quickAdd(opts: RenderOpts, selectedDate: string, projectMode = f
     state.remindMode = remindMode.value;
     syncKind();
   });
-  syncKind();
-
+  const field = (label: HTMLElement, control: HTMLElement, className = "") =>
+    el("label", { class: `qa-field${className ? ` ${className}` : ""}` }, label, control);
+  const timeField = field(timeLabel, time);
+  const remindTimeField = field(el("span", { class: "qa-field-label" }, "提醒时间"), remindTime, " qa-remind-time-field");
   const form = el("form", {},
-    title,
-    projectMode ? el("div", { class: "qa-row qa-project-row" }, project) : null,
-    el("div", { class: "qa-row" }, time, priority),
-    el("div", { class: "qa-row" }, kind, quadrant),
-    el("div", { class: "qa-row" }, repeat, remindMode),
-    el("div", { class: "qa-row" }, remindTime),
+    field(el("span", { class: "qa-field-label" }, "任务"), title, " qa-title-field"),
+    projectMode ? el("div", { class: "qa-row qa-project-row" }, field(el("span", { class: "qa-field-label" }, "项目"), project)) : null,
+    el("div", { class: "qa-row" }, timeField, field(el("span", { class: "qa-field-label" }, "优先级"), priority)),
+    el("div", { class: "qa-row" }, field(el("span", { class: "qa-field-label" }, "类型"), kind), field(el("span", { class: "qa-field-label" }, "重要性"), quadrant)),
+    el("div", { class: "qa-row" }, field(el("span", { class: "qa-field-label" }, "重复"), repeat), field(el("span", { class: "qa-field-label" }, "提醒"), remindMode)),
+    remindTimeField,
     submitButton,
-    el("div", { class: "qa-hint" }, "截止日会自动进入追踪 · 长期目标会常驻列表"),
+    el("div", { class: "qa-hint" }, "截止任务会进入追踪 · 长期目标会常驻列表"),
   );
+  syncKind();
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const titleText = title.value.trim();
@@ -149,7 +171,7 @@ export function quickAdd(opts: RenderOpts, selectedDate: string, projectMode = f
     if (!result.ok) return;
     state = {
       title: "",
-      time: "",
+      time: "08:00",
       kind: "normal",
       quadrant: "q2",
       project: projectMode ? project.value : "",
@@ -158,11 +180,9 @@ export function quickAdd(opts: RenderOpts, selectedDate: string, projectMode = f
       remindMode: "start",
       remindTime: "",
     };
-    window.__dailyflow.rerender();
   });
   return el("div", { class: "quick-add" },
     el("div", { class: "panel-heading" },
-      el("div", { class: "panel-eyebrow" }, "CAPTURE"),
       el("h3", {}, "快速添加"),
     ),
     form,
